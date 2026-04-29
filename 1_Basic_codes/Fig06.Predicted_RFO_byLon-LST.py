@@ -54,7 +54,7 @@ def main(cr_params, tgt_cr=1):
     nt_per_day= 24  ## Hourly data
 
     mdnm_prd= 'MODIS_t+a_C{}R_predicted_hourly.{}_{}'.format(p_letter,rg_nm,prset_nm)
-    indir= f'../{mdnm_prd}/'
+    indir= f'./Data/{mdnm_prd}/'
     iyr, eyr= tgt_dates[0].year, tgt_dates[1].year
     crnums=[]
     for yy in range(iyr,eyr+1,1):

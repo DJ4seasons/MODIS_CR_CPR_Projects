@@ -55,7 +55,7 @@ def main(cr_params, tgt_cr_groups):
     prset_nm = f'Cld{nelemc}+Pr{nelemp}x{prwt}' if prwt>0 else f'Cld{nelemc}'
     rg_nm= f'{rg}S-{rg}N'
     
-    indir= '../'
+    indir= './Data/'
     mdnm= 'MODIS_t+a_C{}R_set.{}_{}'.format(p_letter,rg_nm,prset_nm)
     infn= indir+f'{mdnm}.nc'
     mdnm2= 'C{}R_set.{}_{}'.format(p_letter,rg_nm,prset_nm)

@@ -45,7 +45,7 @@ def main(cr_params, sat_nm='TAmean'):
     prset_nm = f'Cld{nelemc}+Pr{nelemp}x{prwt}' if prwt>0 else f'Cld{nelemc}'
     rg_nm= f'{rg}S-{rg}N'
     
-    indir= '../'
+    indir= './Data/'
     mdnm= 'MODIS_t+a_C{}R_set.{}_{}'.format(p_letter,rg_nm,prset_nm)
     infn= indir+f'{mdnm}.nc'
     
