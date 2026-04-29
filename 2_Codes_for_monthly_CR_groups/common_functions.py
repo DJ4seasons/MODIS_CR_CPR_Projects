@@ -2,6 +2,7 @@ import sys
 import os.path
 import numpy as np
 from datetime import date,datetime, timedelta
+from netCDF4 import Dataset
 
 def yield_date_range(start_date, end_date, tdelta=1):
     ### Including end date
@@ -150,6 +151,31 @@ def get_tot_months(date0,date1):
     eyr,emon= date1.year, date1.month
     tot_mon= (eyr-iyr-1)*12+ (13-imon) + emon
     return tot_mon
+
+def get_NRB_TOA_monthly(vn,tgt_dates,tgt_latlon):
+    indir= '/Users/djin1/Documents/CLD_Work/Data_Obs/CERES/Monthly/'
+    date_range=[date(2002,7,1),date(2024,12,31)]
+    date_names=[d.strftime('%Y%m') for d in date_range]
+
+    nmon= get_tot_months(*tgt_dates)
+    imon= get_tot_months(date_range[0],tgt_dates[0])-1
+    print(imon,nmon)
+
+    fn= indir+'CERES_EBAF-TOA_Ed4.2.1_Subset_{}-{}.nc'.format(*date_names)
+    fid=Dataset(fn,'r')
+
+    lats= fid.variables['lat']
+    lons= fid.variables['lon']
+    latinfo, loninfo = (lats[0],lats[1]-lats[0],len(lats)), (lons[0],lons[1]-lons[0],len(lons))
+    latlon_info= dict(latinfo=latinfo, loninfo=loninfo)
+    nlat,nlon= latinfo[-1],loninfo[-1]
+    lat_idx, lon_ids= get_tgt_latlon_idx(latlon_info, tgt_latlon[:2], tgt_latlon[2:])
+    print(lat_idx, lon_ids[[0,180,-1]]) #; sys.exit()
+    #domain_size= (lat_idx[1]-lat_idx[0])*len(lon_ids)
+
+    vdata = fid.variables[vn][imon:imon+nmon,lat_idx[0]:lat_idx[1],lon_ids]
+    print(vn,type(vdata),vdata.shape,vdata.min(),vdata.max(),vdata.mean(),vdata.mask.sum())
+    return vdata 
 
 def draw_colorbar(fig,pic1,loc,tt,tt2,ft=10,extend='both'):
     

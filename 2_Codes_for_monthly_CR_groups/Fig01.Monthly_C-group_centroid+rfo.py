@@ -46,7 +46,7 @@ def main():
                       only_use_cftime_datetimes=True,)
     date_range= [date(t1.year, t1.month, t1.day) for t1 in [times[0],times[-1]]]
     tgt_dates= date_range
-    tgt_date_names= '-'.join([dd.strftime('%Y%m') for dd in tgt_dates])
+    tgt_date_names= '-'.join([dd.strftime('%Y.%m') for dd in tgt_dates])
     nmon= cf.get_tot_months(*tgt_dates)
     nyr= nmon//12
     month_days= np.asarray(cf.get_month_days(tgt_dates))
