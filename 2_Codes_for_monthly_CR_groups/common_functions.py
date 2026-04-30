@@ -152,8 +152,7 @@ def get_tot_months(date0,date1):
     tot_mon= (eyr-iyr-1)*12+ (13-imon) + emon
     return tot_mon
 
-def get_NRB_TOA_monthly(vn,tgt_dates,tgt_latlon):
-    indir= '/Users/djin1/Documents/CLD_Work/Data_Obs/CERES/Monthly/'
+def get_NRB_TOA_monthly(vn,tgt_dates,tgt_latlon,in_dir='./Data/'):
     date_range=[date(2002,7,1),date(2024,12,31)]
     date_names=[d.strftime('%Y%m') for d in date_range]
 
@@ -161,7 +160,7 @@ def get_NRB_TOA_monthly(vn,tgt_dates,tgt_latlon):
     imon= get_tot_months(date_range[0],tgt_dates[0])-1
     print(imon,nmon)
 
-    fn= indir+'CERES_EBAF-TOA_Ed4.2.1_Subset_{}-{}.nc'.format(*date_names)
+    fn= in_dir+'CERES_EBAF-TOA_Ed4.2.1_Subset_{}-{}.nc'.format(*date_names)
     fid=Dataset(fn,'r')
 
     lats= fid.variables['lat']

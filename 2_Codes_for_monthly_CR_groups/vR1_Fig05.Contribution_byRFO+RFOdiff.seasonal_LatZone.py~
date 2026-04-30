@@ -5,17 +5,20 @@ Analyze which factors are responsible for the mean difference, 2003-2012 vs. 201
 2. By mean RFO difference
 3. Combined
 
-2025.04.17
+This is specialized to mean RFO change in the form of seasonal lat-zone
+
+2025.05.16
 Daeho Jin
 ---
 
-Figure 2 for the paper
-2025.05.13
+Updated to m2r3
+2025.06.25
 ---
 
-For Rv1.
-H1_tk and H2_tk, and geodetic weight+mon_day weight
-2025.11.11 
+Revision1
+H_tk -> H1_tk and H2_tk
+Geodetic weight + mon_days weight
+2025.11.14
 """
 
 import numpy as np
@@ -32,10 +35,10 @@ def main():
     rad_name= rad_names[rad_idx]+'_outgoing'
     #rad_names= [val+'_outgoing' for val in rad_names]
     rad_name_tit= 'O{}R'.format(rad_names[rad_idx][0])
-
+    
     sat_nm= 'TAmean'
     #tgt_crg= [0,1,2,3,4]
-    #rfo_crt=1.
+    rfo_crt=1.
     tgt_cr_groups= [
         ('H1_tk',(1,3,5)), ('H2_tk',(2,6)), 
         #('H1_tn',(7,9)),  ('H2_tn',(8,)),
@@ -65,11 +68,11 @@ def main():
     nyr= nmon//nmon_yr
 
     xt= cf.yield_monthly_date_range(*tgt_dates,mdelta=1)
-    mon_days= cf.get_month_days(tgt_dates)    
-    #print(np.asarray(mon_days).reshape(-1,12))
     #print(xt); sys.exit()
+    mon_days= cf.get_month_days(tgt_dates)
     mon_days_clim_norm= np.asarray(mon_days).reshape(-1,12)[:4,:].mean(axis=0)
     mon_days_clim_norm= mon_days_clim_norm/mon_days_clim_norm.sum()
+    #mon_days= np.asarray(mon_days)
     
     pd1_dates= (date(2002,9,1),date(2012,8,31))
     imon1,nmon1= cf.get_tot_months(tgt_dates[0],pd1_dates[0])-1,cf.get_tot_months(*pd1_dates)
@@ -91,21 +94,22 @@ def main():
     latlon_info= dict(latinfo=latinfo, loninfo=loninfo)
     lats= np.arange(nlat)*hs1+latinfo[0]
     lons= np.arange(nlon)*hs1+loninfo[0]
-    xy= np.meshgrid(lons,lats)
+    #xy= np.meshgrid(lons,lats)
     #lat_weight= cf.apply_lat_weight(np.ones([nlat,nlon]),nlat,nlon,lats).squeeze()
     #print(lat_weight[:,0])
     #lats_2d= np.ones([nlat,nlon],dtype=float)*lats[:,None]
+    latzone_loc= [-60,-28,0,28,60]
+    lz_iloc= (np.asarray(latzone_loc)+max_lat)//hs1
+    print(lz_iloc)
+    nzone= len(lz_iloc)-1
+    #
     nlat0,nlon0= max_lat*2,360
     lats0= np.arange(nlat0)-nlat0/2+0.5
     lat_weight= cf.apply_lat_weight(np.ones([nlat0,nlon0,]),nlat0,nlon0,lats0,geodetic=True).squeeze()
     lat_weight= lat_weight.reshape([nlat,hs1,nlon,hs1]).mean(axis=(1,3))
-
-    if rad_idx==0:
-        ### Read Solar Insolation data
-        rad0= cf.get_NRB_TOA_monthly('solar_mon',tgt_dates,tgt_latlon1) #*-1
-    elif rad_idx==1:
-        rad0= cf.get_NRB_TOA_monthly('toa_lw_clr_c_mon',tgt_dates,tgt_latlon1)
-        
+    
+    ### Read Solar Insolation data
+    rad0= cf.get_NRB_TOA_monthly('solar_mon',tgt_dates,tgt_latlon1) #*-1
     ## Degrading resolution
     if hs1>1:
         rad0= rad0.reshape([nmon,nlat,hs1,nlon,hs1]).swapaxes(2,3).reshape([nmon,nlat,nlon,hs1*hs1]).mean(axis=-1)
@@ -135,7 +139,7 @@ def main():
             half_kc.append(kc)
         #kc_all.append(half_kc)
 
-    
+    '''
         ### For TOA CRE    
         var_names= ['toa_sw_all_mon','toa_sw_clr_t_mon','toa_lw_all_mon','toa_lw_clr_t_mon',]
         vn= var_names[rad_idx*2]
@@ -148,15 +152,17 @@ def main():
         if hs1>1:
             rad1= rad1.reshape([nmon,nlat,hs1,nlon,hs1]).swapaxes(2,3).reshape([nmon,nlat,nlon,hs1*hs1]).mean(axis=-1)
         #rad_ref_all.append(rad1)
-        
-    rad_pd1= np.average(rad1[imon1:imon1+nmon1,:],weights=mon_days[imon1:imon1+nmon1],axis=0) #.mean(axis=0)
-    rad_pd2= np.average(rad1[imon2:imon2+nmon2,:],weights=mon_days[imon1:imon1+nmon1],axis=0) #.mean(axis=0)
-    rad_pd1_gm= np.ma.average(rad_pd1.reshape(-1),weights=lat_weight.reshape(-1))
-    rad_pd2_gm= np.ma.average(rad_pd2.reshape(-1),weights=lat_weight.reshape(-1))
+
+    rad1= rad1.reshape([nyr,4,3,nlat*nlon])
+    rad_pd1= rad1[iyr1:iyr1+nyr1,:].mean(axis=(0,2))
+    rad_pd2= rad1[iyr2:iyr2+nyr2,:].mean(axis=(0,2))
+    rad_pd1_gm= np.ma.average(rad_pd1,weights=lat_weight.reshape(-1),axis=1)
+    rad_pd2_gm= np.ma.average(rad_pd2,weights=lat_weight.reshape(-1),axis=1)
     rad_gm_diff= rad_pd2_gm-rad_pd1_gm
     print(rad_pd1_gm, rad_pd2_gm, rad_gm_diff)
-
+    '''
     ### Read regime RFO
+    '''
     rg_set= dict(rg=50,nelemp=0,prwt=0,km=15)
     crmap= cf.read_cpr_map(rg_set,sat_nm,tgt_dates,tgt_latlon1)    
     print(crmap.shape)
@@ -218,14 +224,14 @@ def main():
                         idx= tmp_sub==tcr1
                     idx_all= np.logical_or(idx_all,idx)
                 ## Exclude new CS
-                idx_all= np.logical_and(idx_all,non_cs[it:et,:])                
+                idx_all= np.logical_and(idx_all,non_cs[it:et,:])
                 by_tcr.append(idx_all)
                 
             tmp_rfos= np.asarray(by_tcr).sum(axis=(1,-1))/tsz  #[ncr,nlat,nlon]
             by_month.append(tmp_rfos)
             rfo_zero= cs_idx[it:et,:].sum(axis=(0,-1))/tsz
             by_month_zero.append(rfo_zero)
-            
+                
     ### RFO                
     rfos= np.asarray(by_month).swapaxes(0,1) #*100 ## Now in %
     print(rfos.shape, rfos.min(), rfos.max(),rfos[:,4::12,:].mean(axis=(1,2,3))) #; sys.exit() #[ncr,nmon,nlat,nlon]
@@ -235,129 +241,129 @@ def main():
     rfo0= rfo0.reshape([1,nyr,nmon_yr,nlat,nlon])
 
     rfos= np.concatenate((rfos,rfo0),axis=0); print(rfos.shape)
-    
+    '''
+    indir= '/Users/djin1/Documents/CLD_Work/Data_Obs/MODIS_c61/Composite/'
+    infn= indir+'Monthly_Composite_Histogram+RFO_map.by{}CRgroups.nc'.format(ncr2)
+    from netCDF4 import Dataset
+    fid= Dataset(infn,'r')
+    mrfo= fid.variables['mRFO'][:]
+    print(mrfo.shape) #; sys.exit()
+    rfos= mrfo.reshape([ncr2,nyr,nmon_yr,nlat,nlon])
+
     ### RFO clim and ano
     #rfos_clim_all= rfos.mean(axis=1)
     rfos_clim_pd1= rfos[:,iyr1:iyr1+nyr1,:,:,:].mean(axis=1)
     rfos_clim_pd2= rfos[:,iyr2:iyr2+nyr2,:,:,:].mean(axis=1)
 
-    #rfos_pd1_ano= rfos[:,iyr1:iyr1+nyr1,:,:,:]-rfos_clim_pd1[:,None,:,:,:]
-    #rfos_pd2_ano= rfos[:,iyr2:iyr2+nyr2,:,:,:]-rfos_clim_pd2[:,None,:,:,:]
+    cdiff_lz= lat_zone_mean(rfos_clim_pd2-rfos_clim_pd1,lz_iloc,lat_weight)
+    print(cdiff_lz.shape) # [nzone, ncr,nmon_yr]
+    #cdiff_lz= cdiff_lz.reshape([nzone,ncr2,4,3]).mean(axis=-1)*100 ## Now in %
+    cdiff_lz= (cdiff_lz*mon_days_clim_norm[None,None,:]).reshape([nzone,ncr2,4,3]).sum(axis=-1)
+    cdiff_lz= cdiff_lz/mon_days_clim_norm.reshape([4,3]).sum(axis=-1)*100 ## Now in %
     
     ### Build R from RFO
     ### kc: [nmon_yr,nlat,nlon,ncr+1]
     ## 1. Due to model diff
     rad_built_set=[]
-    lw= lat_weight.reshape(-1)
-    sn_set=[]
+    #lw= lat_weight.reshape([nlat//5,5,nlon]).sum(axis=(1,2))
+    #lw= lw/lw.sum()
     for kc1 in half_kc:
-        by_clim=[]        
+        by_clim=[]
         for j,rc in enumerate([rfos_clim_pd1,rfos_clim_pd2]):
             rad_compo=[]
-            rad_compo_sn=[]
             for icr in range(ncr2):
                 rad_tmp2= kc1[:,:,:,icr]*rc[icr,:]
                 #if rad_idx==0: rad_tmp2*=r0_clim[j]
                 if True: rad_tmp2*=r0_clim[j]
-                #rad_tmp2_mean0= rad_tmp2.mean(axis=0)
-                rad_tmp2_mean0= (rad_tmp2*mon_days_clim_norm[:,None,None]).sum(axis=0)
-                rad_compo.append(np.average(rad_tmp2_mean0,weights= lat_weight))
-                #rad_tmp2_sn_mean0= rad_tmp2.reshape([4,3,nlat*nlon]).mean(axis=1)
-                rad_tmp2_sn_mean0= (rad_tmp2*mon_days_clim_norm[:,None,None]).reshape([4,3,nlat*nlon])
-                rad_tmp2_sn_mean0= rad_tmp2_sn_mean0.sum(axis=1)/mon_days_clim_norm.reshape([4,3]).sum(axis=1)[:,None]
-                rad_compo_sn.append(np.average(rad_tmp2_sn_mean0,weights=lw,axis=1))
+                #rad_tmp2= rad_tmp2.reshape([4,3,nlat//5,5,nlon]).mean(axis=(1,3,4))
+                rad_tmp2= lat_zone_mean(rad_tmp2,lz_iloc,lat_weight)
+                #rad_compo.append(rad_tmp2.reshape([nzone,4,3,]).mean(axis=2))
+                rad_tmp2_sn= (rad_tmp2*mon_days_clim_norm[None,:]).reshape([nzone,4,3]).sum(axis=-1)
+                rad_tmp2_sn= rad_tmp2_sn/mon_days_clim_norm.reshape([4,3]).sum(axis=-1)
+                rad_compo.append(rad_tmp2_sn)
+                
             #rad_intp= kc1[:,:,:,-1].copy()  ## Intercept
             #if rad_idx==0: rad_intp*=r0_clim[j]
-            #rad_compo.append(np.average(rad_intp.mean(axis=0),weights= lat_weight))
-            #rad_compo_sn.append(np.average(rad_intp.reshape([4,3,nlat*nlon]).mean(axis=1),weights=lw,axis=1))
+            ##rad_compo.append(rad_intp.reshape([4,3,nlat//5,5,nlon]).mean(axis=(1,3,4)))
+            #rad_intp= lat_zone_mean(rad_intp,lz_iloc,lat_weight)
+            #rad_compo.append(rad_intp.reshape(4,3,nzone).mean(axis=1))
+            
             by_clim.append(rad_compo)
-            sn_set.append(rad_compo_sn)
         rad_built_set.append(by_clim)
-
-        '''
-        by_ano=[]
-        for r1 in [rfos_pd1_ano,rfos_pd2_ano]:
-            rad_compo=[]
-            for icr in range(ncr):
-                rad_tmp3= kc1[None,:,:,:,icr]*r1[icr,:]
-                rad_compo.append(np.average(rad_tmp3.mean(axis=(0,1)),weights= lat_weight))
-            rad_intp= kc1[:,:,:,-1]  ## Intercept
-            rad_compo.append(np.average(rad_intp.mean(axis=0),weights= lat_weight))
-            by_ano.append(rad_compo)
-        rad_built_set3.append(by_ano)
-        
-        
-        rad_built=0.
-        for icr in range(ncr):
-            rad_built+= kc1[None,:,:,:,icr]*rfos[icr,:]
-        rad_built+= kc1[None,:,:,:,-1]  ## Intercept
-
-        ## semi-global mean
-        rbuilt1_gm= np.ma.average(rad_built.reshape([nmon,nlat*nlon]),weights=lat_weight.reshape(-1),axis=1)
-        '''
+    
         
     #rad_built_set3= [rad_built_set2[0][0],rad_built_set2[1][1]]
     rad_built_set= np.asarray(rad_built_set)
-    sn_set= np.asarray(sn_set)
-    print(rad_built_set.shape) #; sys.exit() #[n_model, n_rfo, ncr+1]
-    for i in range(2):
-        for j in range(2):
-            print(rad_built_set[i,j,:])
-    #sys.exit()
-    ### For Figure
-    rg_name_tit= '{a}\u00B0S\u2013{a}\u00B0N'.format(a=max_lat)
-    sn_names= ['SON','DJF','MAM','JJA']
-    suptit= 'Contribution to {} mean difference in {}'.format(rad_name_tit, rg_name_tit)
-    outdir= '../../Writing_TOA_Rad_Trend+CR/Pics/'       
-    outfn= outdir+'vR1_Fig03.Contribution2GM_mean_diff.{}_vs_{}.{}.{}.png'.format(*[val.split()[1] for val in [pd1_date_name,pd2_date_name]],rad_name,md_ver)
+    print(rad_built_set.shape) #; sys.exit() #[n_model, n_rfo, ncr+1,n_latzone,n_season]
+    #for i in range(2):
+    #    for j in range(2):
+    #        print(rad_built_set[i,j,:])
+    #sys.exit()    
 
-    pn_tit= ['By Model Diff. (Period2_Model - Period1_Model)',
-             'By RFO_clim Diff. (using Period2_RFO - using Period1_RFO)',
-             'Combined (Period2_Model[Period2_RFO] - Period1_Model[Period1_RFO])',
-             'Combined, by season',
-    ]
-    pn_labs= [('Period1\nRFO','Period2\nRFO'),('Period1\nModel','Period2\nModel'),('',)]
-    pic_data= dict(rad_ref= rad_gm_diff, rad_built_set= rad_built_set,
-                   ind_set1= [[(0,0),(1,0)],[(0,1),(1,1)]],
-                   ind_set2= [[(0,0),(0,1)],[(1,0),(1,1)]],
-                   ind_set3= [[(0,0),(1,1)],], sn_diff= sn_set[-1]-sn_set[0],
-                   pn_tit= pn_tit, pn_labs= pn_labs,sn_names= sn_names,
-                   xt=xt, cr_group_names=cr_group_names+['Clear'],
-                   suptit=suptit, outfn=outfn,)
-    plot_main(pic_data)
+    ## By RFO change:
+    rad_built_set= rad_built_set.mean(axis=0)
+    rad_built_diff= rad_built_set[1]-rad_built_set[0]  #[ncr+1,n_latzone,n_season]
+
+    ## RFO diff:
+    cdiff_lz= cdiff_lz.swapaxes(0,1)  #[ncr,n_latzone,n_season]
+    
+    ### For Figure
+    sn_names= ['SON','DJF','MAM','JJA']
+    for isn in [[0,2],[1,3]]:
+        sn_name= '+'.join([sn_names[i] for i in isn])
+        suptit= '{} Contribution by Mean RFO Diff. vs. RFO Diff.\n(Weighted by Area Fraction)'.format(rad_name_tit) #, tgt_rg_name1
+        outdir= '../../Writing_TOA_Rad_Trend+CR/Pics/'       
+        outfn= outdir+'vR1_Fig05.{}_Contribution_byRFO_vs_RFOdiff.{}_vs_{}.LatZone.{}_{}.png'.format(rad_name_tit,*[val.split()[1] for val in [pd1_date_name,pd2_date_name]],md_ver,sn_name)
+
+        #pn_tit= ['By Model Diff.','By RFO Diff.',] #'Combined']
+        pic_data= dict(rad_built_set1= [rad_built_diff[:,:,i] for i in isn],
+                       rfo_set1= [cdiff_lz[:,:,i] for i in isn],
+                       sn_names= [sn_names[i] for i in isn], latzone_loc=latzone_loc,
+                       xt=xt, cr_group_names=cr_group_names+['Clear'],
+                       suptit=suptit, outfn=outfn,)
+            
+        plot_main(pic_data)
                                                          
     return
 
+def lat_zone_mean(arr1,lz_iloc,lw):
+    by_lat=[]
+    for lt0,lt1 in zip(lz_iloc[:-1],lz_iloc[1:]):
+        if arr1.ndim==3:
+            mtmp1= (arr1[:,lt0:lt1,:]*lw[None,lt0:lt1,:]).sum(axis=(1,2))
+        elif arr1.ndim==4:
+            mtmp1= (arr1[:,:,lt0:lt1,:]*lw[None,None,lt0:lt1,:]).sum(axis=(2,3))
+        by_lat.append(mtmp1)
+    by_lat= np.asarray(by_lat)/lw.sum()
+    return by_lat 
+ 
 import matplotlib as mpl
 import matplotlib.colors as cls
 import matplotlib.pyplot as plt
 from matplotlib.ticker import AutoMinorLocator, FixedLocator,FuncFormatter, MultipleLocator
 from matplotlib.dates import DateFormatter, YearLocator
+import matplotlib.patches as mpatches
 
 def plot_main(pdata):
-    rad_ref= pdata['rad_ref']
-    rad_built_set= pdata['rad_built_set']
-    ind_set1= pdata['ind_set1']
-    ind_set2= pdata['ind_set2']
-    ind_set3= pdata['ind_set3']
-    sn_diff= pdata['sn_diff']
-    sn_names= pdata['sn_names']
+    #rad_ref= pdata['rad_ref']
+    rad_built_set1= pdata['rad_built_set1']
+    rfo_set1= pdata['rfo_set1']
     xt= pdata['xt']
-    pn_tit= pdata['pn_tit']
-    pn_labs= pdata['pn_labs']
-    cr_group_names= pdata['cr_group_names']
+    sn_names= pdata['sn_names']
+    lz_loc= pdata['latzone_loc']
+    cr_names= pdata['cr_group_names']
     
     abc= 'abcdefghijklmnopqrstuvwxyzabcdefg'
-
+    rad_name= pdata['suptit'].split()[0]
     ###---
     fig=plt.figure()
-    fig.set_size_inches(7.6,8.)    ## (lx,ly)
+    fig.set_size_inches(10,9.5)    ## (lx,ly)
     plt.suptitle(pdata['suptit'],fontsize=16,y=0.975,va='bottom',stretch='semi-condensed') #,x=0.1,ha='left')
-    ncol,nrow=1,3.5
-    lf,rf,bf,tf=0.05,0.95,0.1,0.925
-    gapx, npnx=0.06,ncol
+    ncol,nrow=2,2
+    lf,rf,bf,tf=0.06,0.92,0.34,0.94
+    gapx, npnx=0.08,ncol
     lx=(rf-lf-gapx*(npnx-1))/float(npnx)
-    gapy, npny=0.075,nrow
+    gapy, npny=0.08,nrow
     ly=(tf-bf-gapy*(npny-1))/float(npny)
     
     ix=lf; iy=tf    
@@ -365,139 +371,122 @@ def plot_main(pdata):
     unit0= r'$Wm^{-2}$'
     #unit1= unit0+r'$yr^{-1}$'
     ai=ci=0
-    cc= ['C0','C1','C8','C6','C3','0.5']
-
-    xtlabs= cr_group_names+['Sum']
-    nv= len(xtlabs)
-    wd= 0.75
+    #cc= ['C0','C1','C8','C6','C3','0.5']
+    cc= ['C{}'.format(val) for val in [3,5,0,4,1,2,6,8,9]]
+    
+    #xtlabs= cr_group_names
+    nv,n_lat= rad_built_set1[0].shape
+    wd=0.76*28
+    yloc0= np.array([(v0+v1)/2 for v0,v1 in zip(lz_loc[:-1],lz_loc[1:])]) #np.arange(-50,53,20)
+    #yloc1, yloc2= yloc0+wd/2, yloc0-wd/2
+    yloc1=yloc0
+    props0= dict(height=wd,alpha=0.8)
+    #props1= dict(height=wd,alpha=0.8)
+    props_t= dict(fontsize=10,va='center',ha='center',stretch='condensed')
+    
     ###--- panel1
-    axes=[]
-    for j,ind0 in enumerate([ind_set1, ind_set2, ind_set3]):
-        ax1= fig.add_axes([ix,iy-ly,lx,ly])
-        diff_set=[]
-        for ind1 in ind0:
-            (i0,i1),(i2,i3)= ind1
-            diff1= rad_built_set[i2,i3,:]-rad_built_set[i0,i1,:]
-            diff1_sum= diff1.sum()
-            data= list(diff1)+[diff1_sum]
-            diff_set.append(data)
-        ng= len(diff_set)
-        wd1= wd/ng if ng>1 else 0.67
-        xlocs= bar_x_locator(wd1,data_dim=[ng,nv])
-
-        for xl,data,data_nm in zip(xlocs,diff_set,pn_labs[j]):
-            bar1= ax1.bar(xl,data,width=wd1,color=cc[ci],alpha=0.8,label=data_nm); ci+=1
-            for ix,val in enumerate(data):
-                ax1.text(xl[ix],0.06,'{:.2f}'.format(val),ha='center',va='bottom',rotation=90,fontsize=9,color='k')
-        subtit= '({}) {} '.format(abc[ai],pn_tit[ai],); ai+=1
-        ax1.set_title(subtit,fontsize=12,x=0,ha='left')
-        ax1.set_xticks(range(nv))
-        ax1.set_xticklabels(xtlabs)
-    
-        ax1.yaxis.set_minor_locator(AutoMinorLocator(2))
-    
-        ax1.set_ylabel('Rad. Diff. ({})'.format(unit0),fontsize=10)    
-        ax1.grid(axis='y',ls=':',c='0.7',lw=1)
-        ax1.tick_params(axis='both',which='major',labelsize=9.5)
-        #ax1.yaxis.set_ticks_position('both')
-
-        ax1.axhline(y=0,ls='--',lw=1,c='0.3')
-        ax1.axvline(x=nv-1.5,ls='--',c='0.6',lw=1.5)
-        if j==2:
-            ax1.axhline(y=rad_ref,ls=':',lw=2,c='0.1',label='Obs. Mean\nDifference')
-        ax1.legend(loc='upper left',fontsize=10,framealpha=0.9, borderaxespad=0.,bbox_to_anchor=(1.02,1.))
-        ax1.set_xlim([-0.5,nv-0.5])
-        axes.append(ax1)
-        
-        ix+= lx+gapx
-        if ix+lx>rf:
-            ix=lf
-            iy-= ly+gapy
-    
-
-    ## Modify y-axs range
-    ax1,ax2,ax3= axes
-    vmin1,vmax1= ax1.get_ylim()
-    vmin2,vmax2= ax2.get_ylim()
-    vmin,vmax= min(vmin1,vmin2), max(vmax1,vmax2)
-    ax1.set_ylim([vmin,vmax])
-    ax2.set_ylim([vmin,vmax])
-    if vmax-vmin<2.:
-        lnt=0.3
-    else:
-        lnt=1
-
-    ax1.yaxis.set_major_locator(MultipleLocator(lnt))
-    ax2.yaxis.set_major_locator(MultipleLocator(lnt))
-    ax3.yaxis.set_major_locator(MultipleLocator(lnt))
-    
-
-    ### Seasonal view
-    if True:
-        ax1= fig.add_axes([ix,iy-ly,lx,ly])
-        n_sn= len(sn_names)
-        diff_set=[]
-        for isn in range(n_sn):
-            diff1= sn_diff[:,isn]/4
-            diff1_sum= diff1.sum()
-            data= list(diff1)+[diff1_sum]
-            diff_set.append(data)
-        
-        ng= 1 #len(diff_set)
-        wd1= wd/ng if ng>1 else 0.67
-        xlocs= bar_x_locator(wd1,data_dim=[ng,nv])
-
-        ax1.axhline(y=rad_ref,ls=':',lw=2,c='0.1',label='Obs. Mean\nDifference')
-
-        t_crt= 0.195 if abs(rad_ref)>0.9 else 0.495
-        ci=0
-        for jj in range(nv):
+    #axes=[]
+    #xmin,xmax= 999,-999
+    if rad_name=='OSR':
+        xlim1= [-0.86,0.76]
+        xlint1= 0.2
+        vcrt= 0.145
+    elif rad_name=='OLR':
+        xlim1= [-3.05,3.25]
+        xlint1= 1.
+        vcrt= 0.495
+    xlim2= [-0.76,0.76]
+    patches=[]
+    ai=0
+    for ip,sn in enumerate(sn_names):
+        ax2= fig.add_axes([ix,iy-ly,lx,ly])
+        diff2= rfo_set1[ip]
+        for jj in range(n_lat):
             bm1=bp1=0
-            for ii in range(len(diff_set)):
-                diff1= diff_set[ii][jj]
-                if diff1>=0:
-                    if jj==0:
-                        bar1= ax1.bar([xlocs[0][jj],],[diff1,],bottom=bp1,color=cc[ii],alpha=0.8,width=wd1,label=sn_names[ii])
-                    else:
-                        bar1= ax1.bar([xlocs[0][jj],],[diff1,],bottom=bp1,color=cc[ii],alpha=0.8,width=wd1,)
-                    if diff1>t_crt:
-                        ax1.text(xlocs[0][jj],bp1+diff1/2,'{:.2f}'.format(diff1),ha='center',va='center',fontsize=9,color='k')
-                    bp1+= diff1
+            for ii in range(nv-1,-1,-1):
+                if diff2[ii,jj]>=0:
+                    pic1= ax2.barh([yloc1[jj],],diff2[ii,jj],left=bp1,color=cc[ii],**props0)
+                    bp1+=diff2[ii,jj]
                 else:
-                    if jj==0:
-                        bar1= ax1.bar([xlocs[0][jj],],[diff1,],bottom=bm1,color=cc[ii],alpha=0.8,width=wd1,label=sn_names[ii])
-                    else:
-                        bar1= ax1.bar([xlocs[0][jj],],[diff1,],bottom=bm1,color=cc[ii],alpha=0.8,width=wd1,)
-                    if diff1<-t_crt:
-                        ax1.text(xlocs[0][jj],bm1+diff1/2,'{:.2f}'.format(diff1),ha='center',va='center',fontsize=9,color='k')
-                    bm1+= diff1
+                    pic1= ax2.barh([yloc1[jj],],diff2[ii,jj],left=bm1,color=cc[ii],**props0)
+                    bm1+=diff2[ii,jj]
                     
-        subtit= '({}) {} '.format(abc[ai],pn_tit[ai],); ai+=1
-        ax1.set_title(subtit,fontsize=12,x=0,ha='left')
-        ax1.set_xticks(range(nv))
-        ax1.set_xticklabels(xtlabs)
-    
-        ax1.yaxis.set_minor_locator(AutoMinorLocator(2))
-    
-        ax1.set_ylabel('Rad. Diff. ({})'.format(unit0),fontsize=10)    
-        ax1.grid(axis='y',ls=':',c='0.7',lw=1)
-        ax1.tick_params(axis='both',which='major',labelsize=9.5)
-        #ax1.yaxis.set_ticks_position('both')
+                val,yl= diff2[ii,jj],yloc1[jj]
+                xl= bp1-val/2 if val>=0 else bm1-val/2
+                if abs(val)>0.145:
+                    ax2.text(xl,yl,'{:.2f}'.format(val),c='0.1',**props_t) #,stretch='condensed'
+                elif abs(val)>0.095:                  
+                    ax2.text(xl,yl,'{:.2f}'.format(val),c='0.1',**props_t)
 
-        ax1.axhline(y=0,ls='--',lw=1,c='0.3')
-        ax1.axvline(x=nv-1.5,ls='--',c='0.6',lw=1.5)        
-            
-        ax1.legend(loc='upper left',fontsize=10,framealpha=0.9, borderaxespad=0.,bbox_to_anchor=(1.02,1.))
+                
+        subtit= '({}) {}: RFO Difference'.format(abc[ai],sn); ai+=1
+        print(subtit)
+        ax2.set_title(subtit,fontsize=13,x=0.,ha='left') #,stretch='semi-condensed'
+
+        ax2.set_xlim(xlim2)
+        ax2.xaxis.set_major_locator(MultipleLocator(0.3))
+        ax2.xaxis.set_minor_locator(AutoMinorLocator(2))
+        ax2.set_ylim([-60.01,60.01])        
+        ax2.yaxis.set_major_locator(FixedLocator(lz_loc))
+        ax2.yaxis.set_major_formatter(FuncFormatter(cf.lat_formatter))
+        ax2.set_xlabel('RFO Diff. (%)',fontsize=11)
+        ax2.set_ylabel('Latitude',fontsize=11)
+        ax2.tick_params(labelsize=10,direction='in')
+        ax2.yaxis.set_ticks_position('both')
+        ax2.axvline(x=0,c='0.15',ls='--',lw=1.2)
+        if False: #ip==ncol-1:
+            ax2.legend(patches[::-1],cr_names,
+                       loc='upper left', bbox_to_anchor=[1.02,1.],
+                       fontsize=11,framealpha=0.6,borderaxespad=0.)
         #axes.append(ax1)
-
-        ax1.yaxis.set_major_locator(MultipleLocator(lnt))
-        ax1.set_xlim([-0.5,nv-0.5])
-        
         ix+= lx+gapx
-        if ix+lx>rf:
+
+        ax1= fig.add_axes([ix,iy-ly,lx,ly])
+        diff1= rad_built_set1[ip]
+        for jj in range(n_lat):
+            bm1=bp1=0
+            for ii in range(nv-1,-1,-1):
+                if diff1[ii,jj]>=0:
+                    pic1= ax1.barh([yloc1[jj],],diff1[ii,jj],left=bp1,color=cc[ii],**props0)
+                    bp1+=diff1[ii,jj]
+                else:
+                    pic1= ax1.barh([yloc1[jj],],diff1[ii,jj],left=bm1,color=cc[ii],**props0)
+                    bm1+=diff1[ii,jj]
+                    
+                val,yl= diff1[ii,jj],yloc1[jj]
+                xl= bp1-val/2 if val>=0 else bm1-val/2
+                if abs(val)>vcrt:
+                    #ax1.text(xl,yl,'{:.1f}'.format(val),c='0.1',weight='bold',**props_t)
+                    ax1.text(xl,yl,'{:.2f}'.format(val),c='0.1',**props_t) #
+
+                if ip==0 and jj==0:
+                    patch1= mpatches.Patch(color=cc[ii],alpha=0.8)
+                    patches.append(patch1)
+        subtit= '({}) {}: Contribution'.format(abc[ai],sn); ai+=1
+        print(subtit)
+        ax1.set_title(subtit,fontsize=13,x=0.,ha='left') #,stretch='semi-condensed'
+
+        ax1.set_xlim(xlim1)
+        ax1.xaxis.set_major_locator(MultipleLocator(xlint1))
+        ax1.xaxis.set_minor_locator(AutoMinorLocator(2))
+        ax1.set_ylim([-60.01,60.01])        
+        ax1.yaxis.set_major_locator(FixedLocator(lz_loc))
+        ax1.yaxis.set_major_formatter(FuncFormatter(cf.lat_formatter))        
+        ax1.set_xlabel('Rad. Diff. ({})'.format(unit0),fontsize=11)
+        ax1.set_ylabel('Latitude',fontsize=11)
+        ax1.tick_params(labelsize=10,direction='in')
+        ax1.yaxis.set_ticks_position('both')
+        ax1.axvline(x=0,c='0.15',ls='--',lw=1.2)
+        ax1.legend(patches[::-1],cr_names,
+                   loc='upper left', bbox_to_anchor=[1.02,1.],
+                   fontsize=11,framealpha=0.6,borderaxespad=0.)
+            
+        if True: #ix+gapx>rf:
+            iy -= ly+gapy
             ix=lf
-            iy-= ly+gapy
-    
+
+            
+        
     ###---
     print(pdata['outfn'])
     plt.savefig(pdata['outfn'],bbox_inches='tight',dpi=150) #

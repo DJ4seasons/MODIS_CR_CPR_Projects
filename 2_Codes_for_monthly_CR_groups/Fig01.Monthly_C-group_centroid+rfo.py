@@ -5,6 +5,8 @@ Clear-sky regime here is defined with relaxed criterion of 5%
 
 Apply geodetic weight + month_day weight for mean RFO
 month_day weight for centroid
+
+By Daeho Jin
 2025.11.13
 
 Caution: NetCDF file should be downloaded from https://zenodo.org/records/17831744

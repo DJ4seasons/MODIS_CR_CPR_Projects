@@ -34,6 +34,9 @@ def main():
     cr_names= ['H1_tk','H2_tk','H_tn','Mid','L1_tk','L2_tk','L_tn','S-Clr','Clr (CF<5%)']
     ncr= len(cr_names)
 
+    tgt_dates= (date(2002,9,1),date(2024,8,31)) 
+    tgt_date_names= '-'.join([dd.strftime('%Y.%m') for dd in tgt_dates])
+    
     ### Open netCDF file for RFO data
     indir= './Data/'
     infn= indir+'Monthly_Composite_Histogram+RFO_map.by{}CRgroups.nc'.format(ncr)
@@ -45,8 +48,7 @@ def main():
     times= num2date(times[:], units = times.units, calendar=times.calendar,
                       only_use_cftime_datetimes=True,)
     date_range= [date(t1.year, t1.month, t1.day) for t1 in [times[0],times[-1]]]
-    tgt_dates= (date(2002,9,1),date(2024,8,31)) 
-    tgt_date_names= '-'.join([dd.strftime('%Y.%m') for dd in tgt_dates])
+    
     imon,nmon= cf.get_tot_months(date_range[0],tgt_dates[0])-1, cf.get_tot_months(*tgt_dates)
     nmon_yr,nyr= 12, nmon//12
     mon_days= np.asarray(cf.get_month_days(tgt_dates))
@@ -54,7 +56,7 @@ def main():
     
     lats= fid.variables['lat'][:]
     lons= fid.variables['lon'][:]
-    resol=np.round(lons[1]-lons[0],0).astype(int)  ## Now in 4-deg resolution
+    resol=np.rint(lons[1]-lons[0]).astype(int)  ## Now in 4-deg resolution
     max_lat= lats[-1]+resol/2
     tgt_latlon1, tgt_rg_name1= [-max_lat,max_lat,-180,180], '{a}S-{a}N'.format(a=max_lat)
     
@@ -120,9 +122,10 @@ def main():
 
     ### Semi-global mean of CERES reference
     var_names= ['toa_sw_all_mon','toa_lw_all_mon',]
+    in_dir= './Data/'
     rad_ref_all=[]
-    for rad_idx,rad_name in enumerate(var_names):
-        rref1= cf.get_NRB_TOA_monthly(rad_name,tgt_dates,tgt_latlon1)
+    for rad_idx,rad_var in enumerate(var_names):
+        rref1= cf.get_NRB_TOA_monthly(rad_var,tgt_dates,tgt_latlon1,in_dir=in_dir)
         if resol>1:
             rref1= rref1.reshape([nmon,nlat,resol,nlon,resol]).mean(axis=(2,4))
         rref1_gm= np.ma.average(rref1.reshape([nmon,nlat*nlon]),weights=ltw.reshape(-1),axis=1)
@@ -142,7 +145,6 @@ def main():
                                                          
     return
 
-import matplotlib as mpl
 import matplotlib.colors as cls
 import matplotlib.pyplot as plt
 from matplotlib.ticker import AutoMinorLocator, FixedLocator,FuncFormatter, MultipleLocator
