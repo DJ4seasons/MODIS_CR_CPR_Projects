@@ -38,7 +38,7 @@ def main(rad_idx):
     tgt_date_names= '-'.join([dd.strftime('%Y.%m') for dd in tgt_dates])
     
     ### Open netCDF file for RFO data
-    indir= '/Users/djin1/Documents/CLD_Work/Data_Obs/MODIS_c61/Composite/' #'./Data/'
+    indir= './Data/'
     infn= indir+'Monthly_Composite_Histogram+RFO_map.by{}CRgroups.nc'.format(ncr)
     fid= Dataset(infn,'r')
 
