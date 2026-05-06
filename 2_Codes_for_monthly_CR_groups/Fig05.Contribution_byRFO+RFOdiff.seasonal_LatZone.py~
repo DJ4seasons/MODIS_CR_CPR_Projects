@@ -59,7 +59,7 @@ def main(rad_idx):
     lats= fid.variables['lat'][:]
     lons= fid.variables['lon'][:]
     resol=np.rint(lons[1]-lons[0]).astype(int)  ## Now in 4-deg resolution
-    max_lat= (lats[-1]+resol/2).astype(int)
+    max_lat= lats[-1]+resol/2
     tgt_latlon1, tgt_rg_name1= [-max_lat,max_lat,-180,180], '{a}S-{a}N'.format(a=max_lat)
     
     ##-- Geodetic weight is available at 1-deg resolution
