@@ -1,0 +1,386 @@
+"""
+Collect input data for ML project: LcRFO vs. Cloud-controlling factors
+
+RFO: L1_tk, L2_tk, L_tn, and S-Clr
+
+Variable for low cloud indices:
+'T700','T2M','PS','QV700','QV2M','T800','TS'
+'t700','t2m','sp','q700','q2m','t800','skt'
+
+Extended:
+'T_adv (K/day)','WS10m (m/s)','w850 (hPa/day)','RH850 (%)','w700 (hPa/day)','RH700 (%)'
+'skTadv','si10','w850','r850','w700','r700'
+
+---
+
+Target resolution: Monthly, and 4-deg
+Sampling stratege: Quarter-sliding    
+In horizontal: 4x4 box slide by 1-deg
+In temporal: for 91-day (=1 season), 28-day window moves by 7-day
+
+For a target region of 10x10-deg, it is expected to get
+49 in horizontal, 10 in temporal, and 22 years= 10780
+
+By Daeho Jin
+2025.09.19
+---
+
+Update to 12-deg box
+2026.02.06
+---
+
+Include clear-sky into S-Clr
+"""
+
+import numpy as np
+import sys
+import os #.path
+from datetime import timedelta, date
+import math
+import common_functions as cf
+
+def main(sn_idx):
+    ## Parameters
+    sn_names= ['All','SON','DJF','MAM','JJA']
+    t_prd, t_wnd= 91,28
+    h_wnd= 4
+    
+    data_t_range= (date(2002,9,1),date(2024,9,30))
+    data_yy0,data_yy1= data_t_range[0].year, data_t_range[1].year
+    data_mm0,data_mm1= data_t_range[0].month, data_t_range[1].month
+    tgt_dates= data_t_range
+    max_nyr= data_yy1-data_yy0
+    
+    sn_imon= sn_idx*3+6    
+    if sn_imon>12: sn_imon-=12
+    
+    tgt_boxes= get_tgt_boxes_12d_add(sn_idx)
+    max_lat,hs1=60,1
+    tgt_latlon1, tgt_rg_name1= [-max_lat,max_lat,-180,180], '{a}S-{a}N'.format(a=max_lat)
+    nlat,nlon= max_lat*2//hs1,360//hs1
+    latinfo, loninfo = (-max_lat+hs1/2,hs1,nlat), (-180+hs1/2,hs1,nlon)
+    latlon_info= dict(latinfo=latinfo, loninfo=loninfo)
+    lats= np.arange(nlat)*hs1+latinfo[0]
+    lons= np.arange(nlon)*hs1+loninfo[0]
+    
+    ### Read regime RFO
+    sat_nm= 'TAmean' #
+    rg_set= dict(rg=50,nelemp=0,prwt=0,km=15)
+    tgt_cr,subk= rg_set['km'],3
+
+    tgt_cr_groups= [
+        ##('H1_tk',(1,3,5)), ('H2_tk',(2,6)),
+        ##('H1_tn',(7,9)),  ('H2_tn',(8,)),
+        #('H_tk',(1,2,3,5,6,)),
+        #('H_tn',(7,8,9)),
+        #('Mid',(4,151,152)),
+        ('L1_tk',(11,13)),
+        ('L2_tk',(10,12)),
+        ('L_tn',(14,)),
+        ('S-Clr',(153,0)),
+        #('Clr',(0,)),
+    ]
+    tgt_crs= [item[1] for item in tgt_cr_groups]
+    cr_name= [item[0] for item in tgt_cr_groups]
+    ncr= len(tgt_cr_groups)
+    #tgt_cr= [11,13,10,12,] #14,153]
+
+    crmap= cf.read_cpr_map(rg_set,sat_nm,tgt_dates,tgt_latlon1)
+    crmap_sub= cf.read_cpr_map(rg_set,sat_nm,tgt_dates,tgt_latlon1,sub=True,tgt_cr=tgt_cr,subk=subk)
+    print(crmap.shape,crmap_sub.shape)
+
+    ## Read Total CF
+    '''
+    cscf_crt= 5.
+    cfmap= cf.get_Total_CF_daily(tgt_dates,tgt_latlon1,sat_nm=sat_nm)
+    print(cfmap.shape,cfmap.min(), cfmap.max())
+    #non_cs= cfmap>= cscf_crt/100. #
+    cs_idx= np.logical_and(cfmap>-0.00001,cfmap< cscf_crt/100.)
+    cfmap=0
+    #print(cs_idx.sum(), cs_idx.sum()/non_cs.sum()*100.)
+    #sys.exit()
+
+    ## Screen-out "actual" Clear-Sky
+    crmap[cs_idx]= 0
+    crmap_sub[cs_idx]= 0
+    cs_idx=0
+    '''
+    #outdir0= '/Users/djin1/Documents/CLD_Work/Data_Obs/ERA5/Input4ML_LcRFO/'
+    outdir0= './Input4ML_LcRFO/'
+    ## Loop for each target area
+    for (tb_name,tb_latlon) in tgt_boxes:
+        mdnm= '{}_{}'.format(sn_names[sn_idx],tb_name)
+        outdir= outdir0+f'{mdnm}/'
+        if not os.path.isdir(outdir):  # Check if the directory already exists
+            os.mkdir(outdir)  # Create a directory
+            print(outdir,"is created.")
+        
+        ## Location info
+        lat_idx, lon_ids= get_tgt_latlon_idx(latlon_info, tb_latlon[:2], tb_latlon[2:])
+        print(mdnm,tb_latlon) 
+        print(lat_idx,lats[lat_idx])
+        print(lon_ids,lons[lon_ids])
+                
+        #for vn in vns: print(vn)
+        if True:                        
+            ## Read by year
+            by_season=[]
+            mon_indicator= False
+            day_counter=0
+            yr_counter=0
+            for yy in range(data_yy0,data_yy1+1,1):
+                im=data_mm0 if yy==data_yy0 else 1
+                em=data_mm1 if yy==data_yy1 else 12
+                for mm in range(im,em+1,1):
+                    if mm==sn_imon and yr_counter<max_nyr:
+                        it= (date(yy,mm,1)-tgt_dates[0]).days
+                        et= it+t_prd
+                        tmp,tmp_sub= crmap[it:et,lat_idx[0]:lat_idx[1],:],crmap_sub[it:et,lat_idx[0]:lat_idx[1],:]
+                        tmp, tmp_sub= tmp[:,:,lon_ids], tmp_sub[:,:,lon_ids]
+                        miss= tmp==-1 #.sum(axis=0)
+
+                        by_tcr=[]
+                        for tgt_cr in tgt_crs:
+                            idx_all=False
+                            for tcr in tgt_cr:
+                                if tcr<=rg_set['km']:
+                                    idx= tmp==tcr
+                                else:
+                                    tcr1= tcr-rg_set['km']*10
+                                    idx= tmp_sub==tcr1
+                                idx_all= np.logical_or(idx_all,idx)
+                            by_tcr.append(np.ma.masked_array(idx_all,mask=miss,dtype=np.float32))
+                    
+                        by_season.append(np.ma.asarray(by_tcr))
+                        #print(type(by_season[-1]), by_season[-1].shape, by_season[-1].mask.sum())
+                        yr_counter+=1
+
+            by_season= np.ma.asarray(by_season).swapaxes(0,1);
+            print(type(by_season),by_season.shape,by_season.mask.sum()) #; sys.exit() # [ncr,nyr,t_prd,nlat1,nlon1]
+
+            all_samples=[]
+            for k,data1 in enumerate(by_season):
+                sampled_data= quarter_slide_sampling(data1,t_wnd,h_wnd,anomaly=False)
+                all_samples.append(sampled_data)
+                print(sampled_data.shape)
+                print(cr_name[k],sampled_data.min(),np.percentile(sampled_data,[1,5,50,95,99]),sampled_data.max())
+
+                ## Save data
+                out_dim= sampled_data.shape
+                dim_txt= 'x'.join(str(v) for v in out_dim)
+                outfn1= outdir+'{}.{}_sampled.{}.f32dat'.format(cr_name[k],mdnm,dim_txt)
+                with open(outfn1,'wb') as fout:
+                    sampled_data.astype(np.float32).tofile(fout)
+                print(outfn1)
+            
+    return
+    
+def bin_file_read2mtx(fname,dtype=np.float32):
+    """ Open a binary file, and read data
+        fname : file name
+        dtp   : data type; np.float32 or np.float64, etc. """
+
+    if not os.path.isfile(fname):
+        print("File does not exist:"+fname)
+        sys.exit()
+
+    with open(fname,'rb') as fd:
+        bin_mat = np.fromfile(file=fd,dtype=dtype)
+
+    return bin_mat
+
+from math import ceil
+def lon_deg2x(lon,lon0,dlon):
+    x=ceil((lon-lon0)/dlon)
+    if lon0<0 and lon>180:
+        x-= int(360/dlon)
+    if lon0>0 and lon<0:
+        x+= int(360/dlon)
+
+    return x
+lat_deg2y = lambda lat,lat0,dlat: ceil((lat-lat0)/dlat)
+
+def get_tgt_latlon_idx(latlons, tgt_lats, tgt_lons):
+    lon0,dlon,nlon= latlons['loninfo']
+    lat0,dlat,nlat= latlons['latinfo']
+    ##-- Regional index
+    if isinstance(tgt_lons,(list,tuple,np.ndarray)):
+        lon_idx= [lon_deg2x(ll,lon0,dlon) for ll in tgt_lons]
+        if lon_idx[0]==lon_idx[1]:
+            if tgt_lons[0]!=tgt_lons[1]:
+                lon_ids= np.arange(nlon)+lon_idx[0]
+                lon_ids[lon_ids>=nlon] -= nlon
+            else:
+                lon_ids= np.array([lon_idx,])
+        elif lon_idx[1]<lon_idx[0]:
+            lon_ids= np.arange(lon_idx[0]-nlon,lon_idx[1],1)
+        else:
+            if lon_idx[1]-lon_idx[1]<nlon and tgt_lons[1]-tgt_lons[0]>360:
+                lon_idx[1]+=int(360/dlon)   
+            lon_ids= np.arange(lon_idx[0], lon_idx[1], 1)
+    else:
+        lon_ids= np.arange(nlon,dtype=int)
+    lat_idx= [lat_deg2y(ll,lat0,dlat) for ll in tgt_lats]
+    return lat_idx, lon_ids
+
+def quarter_slide_sampling(arr,t_wnd,h_wnd,anomaly=False):
+    ## It is assumed that arr is of 4-D [nyr,t_prd,nlat1,nlon1]
+    nyr,t_prd,nlat1,nlon1= arr.shape
+    if arr.min()<-99.:
+        print('Check data')
+        sys.exit()
+        
+    out_data=[]
+    for iy in range(nlat1-h_wnd+1):
+        for ix in range(nlon1-h_wnd+1):            
+            for it in range(0,t_prd-t_wnd+1,t_wnd//4):
+                tmp_arr= arr[:,it:it+t_wnd,iy:iy+h_wnd,ix:ix+h_wnd].mean(axis=(1,2,3))
+                
+                if anomaly:
+                    tmp_arr= tmp_arr-tmp_arr.mean()
+                out_data.append(tmp_arr)
+    
+    out_data= np.asarray(out_data).T
+    return out_data
+    
+def read_ERA5_1deg_yearly(vn,tgt_year):
+    indir= '/home/djin1/data10/Sat_obs/ERA5/MODIS_matched/MODIS_resol/'
+    data_range= (date(2002,7,1), date(2022,11,30))
+    dr_names= [dd.strftime('%Y%m%d') for dd in data_range]
+    ndays= (data_range[1]-data_range[0]).days+1
+    nlat,nlon= 120,360
+    
+    fn_header= indir+'ERA5_{}.LocalNoon_6hrs-mean+1deg_60S-60N.'.format(vn)
+    fn= fn_header+'{}-{}_{}x{}x{}.f32dat'.format(*dr_names,ndays,nlat,nlon)
+    
+    tgt_dates= (date(tgt_year-1,9,1), date(tgt_year,8,31))
+    ndy= (tgt_dates[1]-tgt_dates[0]).days+1
+    itidx= (tgt_dates[0]-data_range[0]).days
+    offset= 4*nlon*nlat*itidx
+    data= np.memmap(fn,mode='r',dtype=np.float32,offset=offset,shape=(ndy,nlat,nlon))
+    tmp_data= np.array(data)
+    if np.any(tmp_data<-999):
+        print('Possible Missing',vn,tgt_year,tmp_data.min())
+
+    print(tgt_year,tmp_data.shape)
+    return tmp_data
+
+def get_tgt_boxes_12d(sn_idx):
+    tgt_boxes_JJA= [
+        #('Peruvian',(-22,-10,-100,-88)), #-92,-84)), #-90,-80)),
+        #('Namibian',(-22,-10,-10,2)), #-4,4)),
+        #('Californian',(18,30,-146,-134)), #-136,-128)),
+        ('SIO',(-56,-44,64,76)),
+        #('TWP',(4,16,168,180)), 
+    ]
+
+    tgt_boxes_DJF= [
+        #('Peruvian',(-30,-18,-90,-78)), #-92,-84)), #-90,-80)),
+        #('Namibian',(-26,-14,-6,6)), #-4,4)),        
+        #('Australian',(-36,-24,94,106)), #96,104)),
+        #('EqEP',(-4,8,-120,-108)),
+        ('SPO',(-56,-44,-132,-120)),
+    ]
+    tgt_boxes_MAM= [
+        ('Californian',(16,28,-128,-116)), #-136,-128)),
+    ]
+    tgt_boxes_SON= [
+        ('TCP',(-16,-4,-144,-132)), 
+    ]
+    if sn_idx==2:
+        return tgt_boxes_DJF
+    elif sn_idx==4:
+        return tgt_boxes_JJA
+    elif sn_idx==1:
+        return tgt_boxes_SON
+    elif sn_idx==3:
+        return tgt_boxes_MAM
+    
+    else:
+        return None #tgt_boxes_tk
+
+def get_tgt_boxes_12d_add(sn_idx):
+    tgt_boxes_JJA= [
+        #('Peruvian',(-22,-10,-100,-88)), #-92,-84)), #-90,-80)),
+        #('Namibian',(-22,-10,-10,2)), #-4,4)),
+        #('Californian',(18,30,-146,-134)), #-136,-128)),
+        #('SIO',(-52,-40,64,76)),
+        #('TWP',(4,16,168,180)),
+        ('SAO',(-56,-44,-40,-28)),
+    ]
+
+    tgt_boxes_DJF= [
+        #('Peruvian',(-30,-18,-90,-78)), #-92,-84)), #-90,-80)),
+        #('Namibian',(-26,-14,-6,6)), #-4,4)),        
+        #('Australian',(-36,-24,94,106)), #96,104)),
+        #('EqEP',(-4,8,-120,-108)),
+        #('SPO',(-52,-40,-132,-120)),
+        ('NWPO',(40,52,152,164)),
+    ]
+    tgt_boxes_MAM= [
+        ('Canarian',(8,20,-36,-24)), #-136,-128)),
+        ('SPCZ',(-16,-4,-160,-148)), 
+    ]
+    tgt_boxes_SON= [
+        ('TIO',(-8,4,60,72)),
+        ('STropEPO',(-20,-8,-112,-100)), 
+    ]
+    if sn_idx==2:
+        return tgt_boxes_DJF
+    elif sn_idx==4:
+        return tgt_boxes_JJA
+    elif sn_idx==1:
+        return tgt_boxes_SON
+    elif sn_idx==3:
+        return tgt_boxes_MAM
+    else:
+        return None #tgt_boxes_tk
+
+def get_tgt_boxes(sn_idx):
+    tgt_boxes_JJA= [
+        ('Peruvian',(-20,-10,-100,-90)), #-92,-84)), #-90,-80)),
+        ('Namibian',(-20,-10,-10,0)), #-4,4)),
+        ('Californian',(20,30,-145,-135)), #-136,-128)),        
+    ]
+
+    tgt_boxes_DJF= [
+        ('Peruvian',(-30,-20,-90,-80)), #-92,-84)), #-90,-80)),
+        ('Namibian',(-25,-15,-5,5)), #-4,4)),        
+        ('Australian',(-35,-25,95,105)), #96,104)),        
+    ]
+    '''
+    tgt_boxes_tk= [ ('Peruvian',(-20,-12,-88,-80)), #-92,-84)), #-90,-80)),
+                    ('Namibian',(-20,-12,0,8)), #-4,4)),
+                    ('Californian',(24,32,-132,-124)), #-136,-128)),
+                    ('Australian',(-36,-28,100,108)), #96,104)),
+
+                    #('Azores',(40,50,-25,-15)),
+                    #('SW.IndOce',(-52,-44,28,36)),
+
+                    ('S.Pacifc',(-56,-48,-176,-168)),
+                    #('SE.Atlantic',(-56,-48,4,12)),
+                    #('N.Pacific',(48,56,172,180)),
+
+                    #('Canarian',(15,25,-35,-25)),
+                    #('China',(20,105)),
+                    #('N.Pacific',(45,55,170,180)),  ## Modified
+                    #('N.Atlantic',(50,60,-45,-35)),
+                    #
+    ]'''
+    if sn_idx==2:
+        return tgt_boxes_DJF
+    elif sn_idx==4:
+        return tgt_boxes_JJA
+    else:
+        return None #tgt_boxes_tk
+
+
+if __name__=="__main__":
+    #sn_names= ['All','SON','DJF','MAM','JJA']
+    #sn_idx= 2
+    main(2)
+    main(4)
+    main(1)
+    main(3)
+
+
