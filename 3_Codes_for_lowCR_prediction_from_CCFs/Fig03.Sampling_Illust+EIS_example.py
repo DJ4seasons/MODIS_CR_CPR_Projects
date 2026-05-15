@@ -1,11 +1,9 @@
 """
 Illustrate sample strategy + sample distribution example
+Linear regression info in samples are added.
 
-Daeho Jin, 2026.01.14
----
-
-Update to 12-deg box with linear regression info in samples
-2026.03.12
+With help from Claude
+Daeho Jin, 2026.03.12
 """
 
 import numpy as np
@@ -20,46 +18,35 @@ def main():
     
     ## Parameters
     mdnm1= 'ERA5'
-    nyr,npt= 22,810 #490
-    #indir= '/Users/djin1/Documents/CLD_Work/Data_Obs/ERA5/Input4ML_LcRFO/'
+    nyr,npt= 22,810 
     indir= './Input4ML_LcRFO/'
     tgt_crs= ['L1_tk','L2_tk'] #,'L_tn','S-Clr']
     
     input4LCAIs= ['t700','t2m','sp','q700','q2m','t800','skt']
     basic_vars= ['LTS (K)','EIS (K)','ECTEI (K)','ELF (%)', 'M (K)', 'SST (K)']
-    ext_vars= ['T_adv (K/day)','WS10m (m/s)','w700 (Pa/s)','w850 (Pa/s)','RH700 (%)','RH850 (%)',]
     
-    ## Read CR_rfo
+    
+    ## Read CR_rfo from samples
     rfos= cf.collect_data2calc_LCidx_fromSamples(mdnm1,rg_nm,var_names=tgt_crs,indir=indir,in_dim=[nyr,npt])
-    #rfos= [cf.get_anomaly(rfo1,flatten=True) for rfo1 in rfos]
-    #rfos= np.asarray(rfos).T; print(rfos.shape) #[nyr*npt,ncr]
-    
-    #for k,crn in enumerate(tgt_crs):
-    #    rfo1= rfos[:,k]
-    #    print(crn, rfo1.min(), np.percentile(rfo1,[5,50,95]), rfo1.max())    
+
+    ## Check RFO data
+    for k,crn in enumerate(tgt_crs):
+        rfo1= rfos[k]
+        print(crn, rfo1.min(), np.percentile(rfo1,[5,50,95]), rfo1.max())    
     
     ## Prepare LC_idx
     indata= cf.collect_data2calc_LCidx_fromSamples(mdnm1,rg_nm,indir=indir,in_dim=[nyr,npt])
     lci1, sst1= cf.calc_LCidx(indata[:-1]), indata[-1]
-    print(indata[0].shape, lci1.shape, sst1.shape) #; sys.exit() # [nyr,npt,nvar]
+    print(indata[0].shape, lci1.shape, sst1.shape) # [nyr,npt,nvar]
     
-    lci1[:,:,3]*=100  ## Now ECF in %    
-    lci1= np.concatenate((lci1,sst1.reshape([nyr,npt,1])),axis=2)
-    print(lci1.shape)
-    #lci1= cf.get_anomaly(lci1,flatten=True)
-    
-    #lci1= normalize_vars(lci1,basic_vars)
-    #for k in range(6):
-    #    a= lci1[:,k]
-    #    print(basic_vars[k],a.min(), np.percentile(a,[5,50,95]),a.max())
-
-    rfos= [rfos[0][0,:]*100,rfos[1][0,:]*100] #[:490,:]
+    ## Select year 2003 and EIS only
+    rfos= [rfos[0][0,:]*100,rfos[1][0,:]*100] #[:490,:], now in %
     lci1= lci1[0,:,1] #[:490,1]
     
     #---
     suptit= 'Sampling Method and Examples'
-    outdir= '../../Writing_LCC_LCAI/Pics/'       
-    outfn= outdir+'v2_Fig01c.Sampling_Illust.12d.png'
+    outdir= './Pics/'       
+    outfn= outdir+'Fig03.Sampling_Illust+EIS_examples.png'
     pic_data= dict(data_set= [(lci1,rfos[0]),(lci1,rfos[1])],
                    var_names= [(basic_vars[1],tgt_crs[0]),(basic_vars[1],tgt_crs[1])],
                    subtit= '2003 '+rg_nm,
@@ -80,6 +67,7 @@ def plot_main(pdata):
     
     abc= 'abcdefghijklmnopqrstuvwxyzabcdefg'
     ai=0
+    
     ###---    
     fig = plt.figure(figsize=(8.5, 9))  ## (lx,ly)
     plt.suptitle(pdata['suptit'],fontsize=17,y=0.965,va='bottom',stretch='semi-condensed') #,x=0.1,ha='left')
@@ -99,7 +87,7 @@ def plot_main(pdata):
     ax1.set_ylim(-0.5, bbox_sz+0.5)
     #ax1.set_aspect('equal')
 
-    # Draw the 10x10 boundary
+    # Draw domain boundary
     boundary = patches.Rectangle((0, 0), bbox_sz, bbox_sz, linewidth=3,
                             edgecolor='c', facecolor='none', zorder=2)
     ax1.add_patch(boundary)
@@ -109,7 +97,7 @@ def plot_main(pdata):
         ax1.axhline(y=i, color='lightgray', linewidth=0.5, alpha=0.5, zorder=0)
         ax1.axvline(x=i, color='lightgray', linewidth=0.5, alpha=0.5, zorder=0)
 
-    # Draw example 4x4 boxes at different positions
+    # Draw example sampling boxes at different positions
     nx=ny=bbox_sz-sbox_sz+1
     for box_num,fc in zip([1,31,81],['red','blue','green']):
         x0,y0= (box_num-1)%nx, (box_num-1)//ny
@@ -142,12 +130,8 @@ def plot_main(pdata):
     ax1.set_yticks(range(bbox_sz+1))
     ax1.tick_params(labelsize=10)
 
-    # Add annotation for boundary
-    #ax1.annotate('10×10° Boundary', xy=(10, 10), xytext=(8.5, 10.8),
-    #        arrowprops=dict(arrowstyle='->', color='black', lw=1),
-    #        fontsize=10, fontweight='bold')
-
     ix+= lx+gapx
+
     #---
     # Second subplot: Timeline view showing the sampling concept
     ax2 = fig.add_axes([ix,iy-ly,lx,ly])
@@ -184,12 +168,9 @@ def plot_main(pdata):
    
     # Labels and formatting
     ax2.set_xlabel('Days', fontsize=11,) # fontweight='bold')
-    #ax2.set_ylabel('Sample Windows', fontsize=11, fontweight='bold')
     ax2.set_title(f'({abc[ai]}) Temporal Sampling',
                   fontsize=13, ha='left',x=0.) #fontweight='bold')
     ai+=1
-    #ax2.set_yticks(range(10))
-    #ax2.set_yticklabels([f'Window {i+1}' for i in range(10)], fontsize=9)
     ax2.xaxis.set_minor_locator(AutoMinorLocator(2))
     ax2.grid(axis='x', which='major',alpha=0.5, linestyle='--')
     ax2.grid(axis='x', which='minor',alpha=0.4, linestyle=':')
@@ -200,6 +181,7 @@ def plot_main(pdata):
     
     ix=lf
     iy-= ly+gapy
+    
     ###--- Draw sample distribution
     sct_props= dict(s=10)
 
@@ -215,10 +197,10 @@ def plot_main(pdata):
         ax1.xaxis.set_minor_locator(AutoMinorLocator(2))
         ax1.yaxis.set_minor_locator(AutoMinorLocator(2))
 
-        #xlabs= xlab.split()
         ax1.set_xlabel(xlab,fontsize=11)
         ax1.set_ylabel('RFO (%)',fontsize=11)
 
+        ## Add linear regression line and information
         sl,intercept,rvalue,pvalue,stderr= linregress(xdata,ydata)
         print(sl,intercept,rvalue,pvalue)
         xlim= ax1.get_xlim()
@@ -234,11 +216,6 @@ def plot_main(pdata):
         reg_txt= 'Linear Regr.\n{}= {:.3f}\nMAE= {:.1f}'.format(r'$R^2$',r2_score,mae)
         ax1.text(0.03,0.97,reg_txt,fontsize=10,weight=600,transform= ax1.transAxes,ha='left',va='top')
 
-        
-        #corr= np.corrcoef(xdata,ydata)[0,1]
-        #ax1.text(0.02,0.98,f'r={corr:.3f}',c='k'
-        #         fontsize=11,ha='left',va='top',
-        #         transform=axs[1].transAxes,)
         ix+= lx+gapx
         
     ###---
