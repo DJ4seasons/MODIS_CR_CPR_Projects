@@ -170,6 +170,58 @@ def get_Water_Pct(tgt_latlon=[],hs=1):
         wpct= wpct.reshape([ny,hs,nx,hs]).mean(axis=(1,3))
     return wpct
 
+def normalize_x_raw(arr,v_names):
+    npt,nv= arr.shape
+    arr2= np.copy(arr)
+    for k in range(nv):
+        vn= v_names[k] #.split()[0].lower()
+        if vn=='sp':
+            arr2[:,k]= (arr2[:,k]-1000)/25.
+        elif vn=='skTadv':
+            arr2[:,k]/=5.
+        elif vn[:4]=='divg':
+            arr2[:,k]/=1.
+        elif vn[0]=='q' and vn[-3:]=='adv':
+            arr2[:,k]*=(1000./4)
+        elif vn[:4]=='wspd':
+            arr2[:,k]/=10.
+        elif vn[0]=='q':
+            arr2[:,k]*= (1000/15)
+        elif vn=='r2m':
+            continue
+        elif vn[0]=='r' and vn[-1]=='0':
+            arr2[:,k]/= 100.
+        elif 't' in vn:
+            arr2[:,k]= (arr2[:,k]-273.15)/30.
+        else:
+            sys.exit(f'No matching variable: {vn}')            
+    return arr2
+
+def normalize_x_lcai(arr,v_names):
+    npt,nv= arr.shape
+    arr2= np.copy(arr)
+    for k in range(nv):
+        vn= v_names[k].split()[0].lower()
+        if vn=='eis' or vn=='ectei' or vn=='m':
+            arr2[:,k]/= 20.
+        elif vn=='lts':
+            arr2[:,k]= (arr2[:,k]-10)/20.
+        elif vn=='elf':
+            arr2[:,k]/= 100.
+        elif vn=='t_adv':
+            arr2[:,k]/=5.
+        elif vn=='ws10m':
+            arr2[:,k]/=10.
+        elif vn=='w700':
+            arr2[:,k]/=50.
+        elif vn[:2]=='rh':
+            arr2[:,k]/= 50.
+        elif 't' in vn:
+            arr2[:,k]= (arr2[:,k]-273.15)/30.
+        else:
+            sys.exit(f'No matching variable: {vn}')      
+    return arr2
+
 def collect_data2calc_LCidx_fromSamples(mdnm,rg_name,var_names=[],in_dim=[22,490],
                 indir= './Input4ML_LcRFO/'):
     indata=[]
