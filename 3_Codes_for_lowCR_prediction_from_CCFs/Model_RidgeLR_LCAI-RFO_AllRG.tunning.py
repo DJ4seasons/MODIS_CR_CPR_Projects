@@ -250,7 +250,7 @@ def plot(model,cv_data,rg_names,tgt_crs,out_fn):
             
 if __name__=="__main__":
 
-    model= 'LR10' #'LR6' #
+    model= 'LR10' 
     tgt_crs= ['L1_tk','L2_tk','L_tn','S-Clr']
     rg_names= ['DJF_Peruvian','DJF_Namibian','DJF_Australian',
                'JJA_Peruvian','JJA_Namibian','JJA_Californian']

@@ -4,6 +4,11 @@ Seasonal climatology of Low-CR group RFOs and a map of all RFOs > rfo_crt
 
 By Daeho Jin
 2026.03.24
+---
+
+It requires "MODIS_t+a_CR_set.50S-50N_Cld42.nc", which can be downloaded from 
+https://zenodo.org/records/18356023
+
 '''
 
 import numpy as np
@@ -24,7 +29,7 @@ def main():
     prset_nm = f'Cld{nelemc}+Pr{nelemp}x{prwt}' if prwt>0 else f'Cld{nelemc}'
     rg_nm= f'{rg}S-{rg}N'
 
-    indir= '/Users/djin1/Documents/CLD_Work/Data_Ref2upload/CPR_update_wIMv07/' #'./Data/'
+    indir= './Your_directory/'
     mdnm= 'MODIS_t+a_C{}R_set.{}_{}'.format(p_letter,rg_nm,prset_nm)
     infn= indir+f'{mdnm}.nc'
     mdnm2= 'C{}R_set.{}_{}'.format(p_letter,rg_nm,prset_nm)

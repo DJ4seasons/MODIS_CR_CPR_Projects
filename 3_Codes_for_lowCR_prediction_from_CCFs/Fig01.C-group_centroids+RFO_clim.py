@@ -18,6 +18,11 @@ This code shows L1_tk, L2_tk, L_tn, and S-Clr+Clear
 
 Daeho Jin
 2026.01.12
+---
+
+It requires "MODIS_t+a_CR_set.50S-50N_Cld42.nc", which can be downloaded from 
+https://zenodo.org/records/18356023
+
 """
 
 import numpy as np
@@ -38,7 +43,7 @@ def main():
     prset_nm = f'Cld{nelemc}+Pr{nelemp}x{prwt}' if prwt>0 else f'Cld{nelemc}'
     rg_nm= f'{rg}S-{rg}N'
 
-    indir= '/Users/djin1/Documents/CLD_Work/Data_Ref2upload/CPR_update_wIMv07/' #'./Data/'
+    indir= './Your_directory/'
     mdnm= 'MODIS_t+a_C{}R_set.{}_{}'.format(p_letter,rg_nm,prset_nm)
     infn= indir+f'{mdnm}.nc'
     mdnm2= 'C{}R_set.{}_{}'.format(p_letter,rg_nm,prset_nm)
@@ -362,7 +367,6 @@ def map_common(ax,label_idx=[True,True,False,True]):
 
 if __name__=="__main__":
     main()
-    sys.exit()
     
     
 
@@ -370,167 +374,4 @@ if __name__=="__main__":
 
 
 
-
-###-- Parameters and defalut values
-###-------------------------------------
-#rg  = int(sys.argv[1])
-#km    = int(sys.argv[2])       # Number of Clusters
-#sid  = int(sys.argv[3])      # id
-
-#rg, km, sid= 15, 14, 31
-rg, km, sid= 50, 15, 0
-ncl=km; nelem=42
-
-mdnm = 't+a_cld_hist_{}S-{}N'.format(rg,rg)
-#dir1 = '/Users/djin1/Documents/CLD_Work/Data_Obs/Cld+Pr_Regime/New_CTD/'
-dir1= '/Users/djin1/Documents/CLD_Work/Data_Obs/Cld+Pr_Regime/CTD_wRelaxed_Clr/'
-ctdfnm= 'Centroid.MODIS_{}.k{}x{}'.format(mdnm,km,nelem)
-ctd_tail= '.wRelaxed_Clr+TAmean.f64dat'
-fnm=dir1+ctdfnm+ctd_tail
-
-tgt_cr,subk= km,3
-ctdfnm_sub= ctdfnm+'.CR{}_subk{}'.format(tgt_cr,subk)
-fnm_sub=dir1+ctdfnm_sub+ctd_tail #'.f64dat'
-
-
-###
-###---- Read Centroid
-obsctd = bin_file_read2mtx(fnm,dtp=np.float64)
-obsctd = obsctd.reshape([ncl+1,nelem])  # Includes new Clr
-
-obsctd2 = bin_file_read2mtx(fnm_sub,dtp=np.float64)
-obsctd2 = obsctd2.reshape([subk,nelem])
-
-
-
-obscf = np.sum(obsctd,axis=1)*100.
-np.set_printoptions(precision=3,suppress=True)
-print( obscf)
-print(np.sum(obsctd2,axis=1)*100.)
-
-
-#tgt_crs= [[1,3,5,],[7,9],[2,6],[8],[4,151,152],[10,11,12,13],[14,],[153,],] #[0,]]
-#cr_name=['H1_tk','H1_tn','H2_tk','H2_tn','Mid','L_tk','L_tn','S-Clr',] #'CS+Ms']
-#tgt_crs= [[11,13],[10,12],[11,13,10,12],[14,],[153,],] #[0,]]
-#cr_name=['L_tk1','L_tk2','L_tk_1+2', 'L_tn','S-Clr',] #'CS+Ms']
-tgt_cr_groups= [
-        #('H1_tk',(1,3,5)), ('H2_tk',(2,6)), 
-        #('H1_tn',(7,9)),  ('H2_tn',(8,)),
-        #('H_tk',(1,2,3,5,6,)),
-        #('H_tn',(7,8,9)),
-        #('Mid',(4,151,152)),
-        ('L1_tk',(11,13)),
-        ('L2_tk',(10,12)),                    
-        ('L_tn',(14,)),
-        ('S-Clr',(153,)),
-        #('Clr',(0,)),        
-]
-tgt_crs= [item[1] for item in tgt_cr_groups]
-cr_name= [item[0] for item in tgt_cr_groups]
-ncr= len(tgt_cr_groups)
-         
-cent1=[]
-for l,crs in enumerate(tgt_crs):
-    crnm= cr_name[l]
-    cent0= []
-    for k,cr in enumerate(crs):
-        if cr<ncl:
-            vv=np.copy(obsctd[cr-1,:].reshape([7,6]))*100.
-        else:
-            vv=np.copy(obsctd2[cr-km*10-1,:].reshape([7,6]))*100.
-        vv=vv[::-1,:]
-        cent0.append(vv)
-    cent1.append([crnm,np.array(cent0)])
-        
-###--- RFO
-tgt_dates= (date(2002,9,1),date(2024,8,31))
-tgt_date_names= [tgt_dates[0].year+1,tgt_dates[1].year]
-tgt_latlon, tgt_rg_name = [-60,60,-180,180], '60S-60N'
-nyr= tgt_dates[1].year - tgt_dates[0].year
-nlat,nlon=120,360
-lats= np.arange(nlat)-nlat/2+0.5
-lat_weight= cf.apply_lat_weight(np.ones([nlat,nlon,]),nlat,nlon,lats,geodetic=True).squeeze()
-lons= np.arange(nlon)-nlon/2+0.5
-lons2d,lats2d= np.meshgrid(lons,lats)
-        
-satnm= 'TAmean'
-rg,nelemp,prwt,km= 50,0,0,15 #15,6,1,16 #7,22 #
-rg_set= dict(rg=rg,nelemp=nelemp,prwt=prwt,km=km)
-tgt_cr,subk= km,3
-crnum= cf.read_cpr_map(rg_set,satnm,tgt_dates,tgt_latlon).reshape([-1,nlat,nlon])
-crnum_sub= cf.read_cpr_map(rg_set,satnm,tgt_dates,tgt_latlon,sub=True,tgt_cr=tgt_cr,subk=subk).reshape([-1,nlat,nlon])
-
-## Read Total CF
-if True:
-    cscf_crt=5.
-    cfmap= cf.get_Total_CF_daily(tgt_dates,tgt_latlon,sat_nm=satnm)
-    print(cfmap.shape,cfmap.min(), cfmap.max())
-    non_cs= cfmap>= cscf_crt/100. #
-    cs_idx= np.logical_and(cfmap>-0.00001,cfmap< cscf_crt/100.)
-    cfmap=0
-    print(non_cs.sum(), cs_idx.sum())
-    
-#tgt_crs= [[1,3,5],[7,9],[2,6],[8],[4,151,152],[10,11,12,13],[14,],[153,],[0,-1]]
-#cr_name=['H1_tk','H1_tn','H2_tk','H2_tn','Mid','L_tk','L_tn','S-Clr','CS+Miss']
-### Read LO Mask
-indir= '/Users/djin1/Documents/CLD_Work/Data_Obs/'
-infn= indir+'PctWater.dat'
-lat_idx= [90+tgt_latlon[0],90+tgt_latlon[1]]
-lomask0= cf.bin_file_read2mtx(infn).reshape([180,360])[lat_idx[0]:lat_idx[1],:]
-print(lomask0.min(), lomask0.max())    
-lomask0= lomask0 >= 90  ## Ocean only
-    
-map1,grfo=[],[]
-orfo=[]
-for l,crs in enumerate(tgt_crs):
-    crnm= cr_name[l]
-    map0,grfo0,orfo0=[],[],[]
-    for k,cr in enumerate(crs):
-        if cr<km:
-            idx1= crnum==cr            
-        else:
-            cr1= cr%(tgt_cr*10)
-            idx1= crnum_sub==cr1
-        ## Exclude new CS
-        idx1= np.logical_and(idx1,non_cs)
-        
-        map0.append(idx1.mean(axis=0)*100)
-        grfo0.append(np.average(map0[-1],weights=lat_weight))
-        orfo0.append(np.average(map0[-1][lomask0],weights=lat_weight[lomask0]))
-    map1.append([crnm,np.array(map0).sum(axis=0)])
-    grfo.append(grfo0)
-    orfo.append(orfo0)        
-
-
-'''
-## Clear-sky
-map0=cs_idx.mean(axis=0)*100
-map1.append(['Clr (CF<5%)',map0])
-grfo.append([np.average(map0,weights=lat_weight),])
-orfo.append([np.average(map0[lomask0],weights=lat_weight[lomask0]),])
-'''
-
-##-- Weighted sum of centroid
-#obscf=[]
-for i,(_,cent0) in enumerate(cent1):
-    cent1[i][1]= np.average(cent0,weights=grfo[i],axis=0)
-    #obscf.append(cent1[i].sum(axis=(1,2)))
-#print(np.array(cent1).sum(axis=(1,2))); sys.exit()
-
-        
-###-------------------------------------
-
-###-- Plotting basics
-#fig, axs = plt.subplots(5,3)  ## (ny,nx)
-
-###--- Save
-#outdir = "/discover/nobackup/djin1/Clustering/TP_DCov/Pics_MODIS_TRCR_test/"
-outdir = '../../Writing_LCC_LCAI/Pics/'
-fnout = "v1_Fig00.4low_C-group_ctd+rfo.{}.wNewCS.png".format(ctdfnm)
-### Show or Save
-
-plt.savefig(outdir+fnout,bbox_inches='tight',dpi=150)
-#plt.savefig(outdir+fnout,dpi=160)
-
-print(outdir+fnout)
 
