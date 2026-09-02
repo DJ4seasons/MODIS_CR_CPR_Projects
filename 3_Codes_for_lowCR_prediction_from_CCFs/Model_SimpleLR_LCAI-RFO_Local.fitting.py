@@ -20,6 +20,10 @@ NNet-like scaling is applied to all input variables
 
 Daeho Jin
 2026.04.14 
+---
+
+Updated to anomaly-based model
+2026.07.31
 """
 
 import numpy as np
@@ -58,16 +62,11 @@ def main(rg_nm):
 
     ## Prepare LCAIs
     indata= cf.collect_data2calc_LCidx_fromSamples(mdnm1,rg_nm,indir=indir,in_dim=[nyr,npt])
-    lcai1, sst1= cf.calc_LCidx(indata[:-1]), indata[-1]
+    lcai1, sst1= cf.calc_LCidx(indata), indata[-1]
     print(indata[0].shape, lcai1.shape, sst1.shape) #; sys.exit() # [nyr,npt,nvar]
     
     lcai1[:,:,3]*=100  ## Now ECF in %    
     lcai1= np.concatenate((lcai1,sst1.reshape([nyr,npt,1])),axis=2).reshape([nyr*npt,nv])
-
-    ## Normalize LCAIs
-    lcai1= cf.normalize_x_lcai(lcai1,basic_vars)
-
-    ## Check LCAI data after normalization
     for k in range(6):
         a= lcai1[:,k]
         print(basic_vars[k],a.min(), np.percentile(a,[5,50,95]),a.max())
@@ -76,6 +75,11 @@ def main(rg_nm):
     ## Train-Test split
     rfos= rfos.reshape([nyr,npt,ncr])
     lcai1= lcai1.reshape([nyr,npt,nv])
+    
+    ## Standardization
+    rfos= cf.get_anomaly(rfos,train_yr_idx=train_yr_idx,flatten=False,standardization=True)
+    lcai1= cf.get_anomaly(lcai1,train_yr_idx=train_yr_idx,flatten=False,standardization=True)
+    
     X_train, X_test= lcai1[train_yr_idx,:].reshape([-1,nv]),lcai1[test_yr_idx,:].reshape([-1,nv])
     y_train, y_test= rfos[train_yr_idx,:].reshape([-1,ncr]),rfos[test_yr_idx,:].reshape([-1,ncr])
     print(X_train.shape, y_train.shape)
@@ -107,7 +111,7 @@ if __name__=="__main__":
                'JJA_Peruvian','JJA_Namibian','JJA_Californian']
     
     out_dir= './LR_Coef_data/'
-    out_fn_h= out_dir+'Coef.SimpleLR_basic_scaledX.'
+    out_fn_h= out_dir+'Coef.SimpleLR_basic_ano.'
     for i,rg_nm in enumerate(rg_names):
         output1= main(rg_nm)
         out_fn= out_fn_h+'{}_12deg.txt'.format(rg_nm)

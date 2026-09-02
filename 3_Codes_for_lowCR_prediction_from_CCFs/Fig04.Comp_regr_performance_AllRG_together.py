@@ -16,11 +16,12 @@ import math
 import common_functions as cf
 import NN_classes_y5 as NNc5
 
-def get_y_pred(rg_nm,tgt_crs): 
-    print(rg_nm)
-    ncr= len(tgt_crs)
-    
+def get_score(rg_names,tgt_crs): 
+        
     ## Parameters
+    ncr= len(tgt_crs)
+    nrg= len(rg_names)
+    
     mdnm1= 'ERA5'
     nyr,npt= 22,810 
     indir= './Input4ML_LcRFO/'
@@ -29,55 +30,71 @@ def get_y_pred(rg_nm,tgt_crs):
     train_yr_idx= [val for val in range(nyr) if val not in test_yr_idx]
 
     ## Read CR_rfo
-    rfos= cf.collect_data2calc_LCidx_fromSamples(
-        mdnm1,rg_nm,var_names=tgt_crs,indir=indir,in_dim=[nyr,npt])
-    rfos= np.asarray(rfos).reshape([ncr,nyr*npt]).T
-
+    rfo_all=[]
+    for rg_nm in rg_names:
+        rfos= cf.collect_data2calc_LCidx_fromSamples(
+            mdnm1,rg_nm,var_names=tgt_crs,indir=indir,in_dim=[nyr,npt])
+        rfos= np.asarray(rfos).reshape([ncr,nyr*npt]).T
+        rfo_all.append(rfos)
+    rfos= np.asarray(rfo_all).reshape([nrg,nyr,npt,ncr]).swapaxes(0,1).reshape([nyr*nrg*npt,ncr])
+    for k,crn in enumerate(tgt_crs):
+        rfo1= rfos[::7,k]
+        print(crn, rfo1.min(), np.percentile(rfo1,[5,50,95]), rfo1.max())    
     
     ## Parameters for simple and ridge regression
-    input4LCAIs= ['t700','t2m','sp','q700','q2m','t800']
-    input4add_CCFs= ['skt','skTadv','wspd10m','w700','r700']
+    input4LCAIs= ['t700','t2m','sp','q700','q2m','t800','skt']
+    input4add_CCFs= ['skTadv','wspd10m','w700','r700']
     basic_vars= ['LTS (K)','EIS (K)','ECTEI (K)','ELF (%)', 'M (K)', 'SST (K)','T_adv (K/day)','WS10m (m/s)','w700 (Pa/s)','RH700 (%)']
 
     nv= len(basic_vars)
+    nv0= 6 #LCAIs
     nv4lcai= len(input4LCAIs)        
     
     ## Prepare LC_idx
-    indata= cf.collect_data2calc_LCidx_fromSamples(
-        mdnm1,rg_nm,indir=indir,var_names=input4LCAIs+input4add_CCFs,in_dim=[nyr,npt])
-    lcai1, ext1= cf.calc_LCidx(indata[:nv4lcai]), np.asarray(indata[nv4lcai:])
-    print(indata[0].shape, lcai1.shape, ext1.shape) #; sys.exit() # [nyr,npt,nvar]
+    all_lci=[]
+    for rg_nm in rg_names:
+        indata= cf.collect_data2calc_LCidx_fromSamples(
+            mdnm1,rg_nm,indir=indir,var_names=input4LCAIs+input4add_CCFs,in_dim=[nyr,npt])
+        lcai1, ext1= cf.calc_LCidx(indata[:nv4lcai]), np.asarray(indata[nv4lcai-1:])
+        #print(indata[0].shape, lcai1.shape, ext1.shape) #; sys.exit() # [nyr,npt,nvar]
+        lcai1= lcai1.reshape([nyr*npt,-1])
+        ext1= ext1.reshape([-1,nyr*npt]).T
     
-    lcai1= lcai1.reshape([nyr*npt,-1])
-    ext1= ext1.reshape([-1,nyr*npt]).T
-    
-    lcai1[:,3]*=100  ## Now ECF in %    
-    lcai1= np.concatenate((lcai1,ext1),axis=1)
-    print(lcai1.shape)
-
-    ## Normalize LCAIs
-    lcai1= cf.normalize_x_lcai(lcai1,basic_vars)
+        lcai1[:,3]*=100  ## Now ECF in %    
+        lcai1= np.concatenate((lcai1,ext1),axis=1)
+        #print(lcai1.shape)
+        all_lci.append(lci1.reshape([nyr,npt,nv]))
+    lci1= np.asarray(all_lci).swapaxes(0,1).reshape([nyr*nrg*npt,nv])    
     for k in range(nv):
-        a= lcai1[:,k]
+        a= lci1[::7,k]
         print(basic_vars[k],a.min(), np.percentile(a,[5,50,95]),a.max())
-        
+    
     ## Train-Test split
-    rfos= rfos.reshape([nyr,npt,ncr])
-    lcai1= lcai1.reshape([nyr,npt,nv])
+    rfos= rfos.reshape([nyr,nrg*npt,ncr])
+    lcai1= lcai1.reshape([nyr,nrg*npt,nv])
+    rfo_ref= dict(std=rfos[train_yr_idx,:].std(axis=0,ddof=1),mean=rfos[train_yr_idx,:].mean(axis=0))
+    
+    ## Standardization
+    #rfos1= cf.get_anomaly(rfos,train_yr_idx=train_yr_idx,flatten=False,standardization=True)
+    lcai1= cf.get_anomaly(lcai1,train_yr_idx=train_yr_idx,flatten=False,standardization=True)
+    for k in range(nv):
+        a= lcai1[::7,k]
+        print(basic_vars[k],a.min(), np.percentile(a,[5,50,95]),a.max())
+    
     X_train, X_test= lcai1[train_yr_idx,:].reshape([-1,nv]),lcai1[test_yr_idx,:].reshape([-1,nv])
-    y_train, y_test= rfos[train_yr_idx,:].reshape([-1,ncr]),rfos[test_yr_idx,:].reshape([-1,ncr])
+    y_train, y_test= rfos[train_yr_idx,:].reshape([-1,ncr]),rfos[test_yr_idx,:] #.reshape([-1,ncr])
     print(X_train.shape, y_train.shape)
     print(X_test.shape, y_test.shape)
 
-    output=dict(ref= [tgt_crs,y_test.T])
     
-    ## Read coefficients or model
+    ## Read regr. coefficients of models
     indir1a= './LR_Coef_data/'
+    rg_nm= f'AllRG{nrg}'
     
     ##-- Simple LR
-    infn= indir1a+'Coef.SimpleLR_basic_scaledX.{}_12deg.txt'.format(rg_nm)
+    infn= indir1a+'Coef.SimpleLR_basic_ano.{}_12deg.txt'.format(rg_nm)
     
-    simple_LR= np.empty([ncr,nv4lcai,2])
+    simple_LR= np.empty([ncr,nv0,2])
     with open(infn,'r') as f:
         for k,line in enumerate(f):
             if k>0:  ## skip header
@@ -95,19 +112,43 @@ def get_y_pred(rg_nm,tgt_crs):
 
     simple_LR_output= [] 
     for j in range(ncr):
-        yy= y_test[:,j]
+        yy= y_test[:,:,j]
+        rfo_std= rfo_ref['std'][:,j:j+1]
+        rfo_mean= rfo_ref['mean'][:,j:j+1]
+        
         by_tcr=[]
-        for i in range(nv4lcai):
+        for i in range(nv0):
             xx= X_test[:,i]        
             y_pred= xx*simple_LR[j,i,0]+simple_LR[j,i,1]
-            by_tcr.append(y_pred)
+            y_pred= cf.de_standardize(rfo_std,rfo_mean,y_pred.reshape([1,nyr2,nrg*npt])).squeeze() 
+            
+            mae= np.abs(y_pred-yy).mean()
+            r2= 1-((yy-y_pred)**2).sum()/((yy-yy.mean())**2).sum()
+            by_tcr.append(np.array([mae,r2]))
+            
         simple_LR_output.append(by_tcr)
     simple_LR_output= np.asarray(simple_LR_output)
-    #print(simple_LR_output.shape); sys.exit() # [ncr,nv4lcai,nyr*npt]
-    output['simple_LR']= [tgt_crs,basic_vars[:nv4lcai],simple_LR_output]
+    #print(simple_LR_output.shape); sys.exit() # [ncr,nv0,2]
+    output= dict(simple_LR= [tgt_crs,basic_vars[:nv0],simple_LR_output])
+    ## Read bootstrap result
+    K=1000
+    in_dim= [ncr,nv0,K,2]
+    dim_txt= 'x'.join([str(v) for v in in_dim])
+    infn= './Bootstrap_result/Coef_set_BootStrap.SimpleLR_basic_ano.{}_12deg.{}.f32dat'.format(rg_nm,dim_txt)
+    bs_coef= cf.bin_file_read2mtx(infn).reshape(in_dim)[:,:,:,0] # Exclude intercept
+    insig_ind=[]
+    for j in range(ncr):
+        for i in range(nv0):
+            pvals= np.percentile(bs_coef[j,i,:],[2.5,97.5])
+            if pvals[0]*pvals[1]<=0:
+                insig_ind.append(True)
+            else:
+                insig_ind.append(False)
+    insig_ind= np.asarray(insig_ind).reshape([ncr,nv0])
+    output['simple_LR_insig']= insig_ind
             
     ##-- Ridge LR10    
-    infn= indir1a+'Coef.RidgeLR10_basic_scaledX.{}_12deg.txt'.format(rg_nm)    
+    infn= indir1a+'Coef.RidgeLR10_basic_ano.{}_12deg.txt'.format(rg_nm)    
     
     ridge_LR= np.zeros([ncr,nv+1])
     with open(infn,'r') as f:
@@ -121,30 +162,55 @@ def get_y_pred(rg_nm,tgt_crs):
     ridge_LR_output= [] 
     for j in range(ncr):
         yy= y_test[:,j]
+        rfo_std= rfo_ref['std'][:,j:j+1]
+        rfo_mean= rfo_ref['mean'][:,j:j+1]
+    
         y_pred= (X_test*ridge_LR[j,:-1][None,:]).sum(axis=1)+ridge_LR[j,-1]
-        ridge_LR_output.append(y_pred)
+        y_pred= cf.de_standardize(rfo_std,rfo_mean,y_pred.reshape([1,nyr2,nrg*npt])).squeeze() 
+        
+        mae= np.abs(y_pred-yy).mean()
+        r2= 1-((yy-y_pred)**2).sum()/((yy-yy.mean())**2).sum()
+        ridge_LR_output.append(np.array([mae,r2]))
+        
     ridge_LR_output= np.asarray(ridge_LR_output)
-    #print(ridge_LR_output.shape); sys.exit() # [ncr,nyr*npt]
-    output['ridge_LR']= [tgt_crs,ridge_LR_output]
+    #print(ridge_LR_output.shape); sys.exit() # [ncr,2]
+    output['ridge_LR10']= [tgt_crs,ridge_LR_output]
 
-    ##-- LR10 for All_RG6
-    infn2= indir1a+'Coef.RidgeLR10_basic_scaledX.{}_12deg.txt'.format('AllRG6')
-    ridge_LR2= np.zeros([ncr,nv+1])
-    with open(infn2,'r') as f:
-        for k,line in enumerate(f):
-            if k>0:  ## skip header
-                ww= line.strip().split(',')
-                vn0= ww[0]
-                vals= [float(v) for v in ww[1:]]
-                ridge_LR2[k-1,:]= vals
-
+    ##-- LR10 (Local)
+    X_test1= np.copy(X_test).reshape([nyr2,nrg,npt,nv])
+    y_pred_all=[]
+    for r,rg_nm1 in enumerate(rg_names):
+        infn2= indir1a+'Coef.RidgeLR10_basic_ano.{}_12deg.txt'.format(rg_nm1)
+        ridge_LR2= np.zeros([ncr,nv+1])
+        with open(infn2,'r') as f:
+            for k,line in enumerate(f):
+                if k>0:  ## skip header
+                    ww= line.strip().split(',')
+                    vn0= ww[0]
+                    vals= [float(v) for v in ww[1:]]
+                    ridge_LR2[k-1,:]= vals
+                    
+        y_pred_byCR=[]
+        for j in range(ncr):
+            y_pred= (X_test1[:,r,:,:]*ridge_LR2[j,:-1][None,None,:]).sum(axis=2)+ridge_LR2[j,-1]
+            y_pred_byCR.append(y_pred)
+        y_pred_all.append(y_pred_byCR)
+    X_test1=None
+    y_pred_all= np.asarray(y_pred_all) # [nrg,ncr,nyr2,npt]
+    y_pred_all= y_pred_all.swapaxes(0,1).swapaxes(1,2).reshape([ncr,nyr2,nrg*npt])  # [ncr,nyr2,nrg*npt]
+    y_pred_all= cf.de_standardize(rfo_ref['std'],rfo_ref['mean'],y_pred_all)
+        
     ridge_LR2_output= [] 
     for j in range(ncr):
-        yy= y_test[:,j]
-        y_pred= (X_test*ridge_LR2[j,:-1][None,:]).sum(axis=1)+ridge_LR2[j,-1]
-        ridge_LR2_output.append(y_pred)
+        yy= y_test[:,:,j]
+        y_pred= y_pred_all[j]
+        
+        mae= np.abs(y_pred-yy).mean()
+        r2= 1-((yy-y_pred)**2).sum()/((yy-yy.mean())**2).sum()        
+        ridge_LR2_output.append(np.array([mae,r2]))
+        
     ridge_LR2_output= np.asarray(ridge_LR2_output)
-    output['ridge_LR2']= [tgt_crs,ridge_LR2_output]
+    output['ridge_LR10_local']= [tgt_crs,ridge_LR2_output]
 
     ##-- Ridge LR6
     basic_vars2= ['EIS (K)', 'SST (K)','T_adv (K/day)','WS10m (m/s)','w700 (Pa/s)','RH700 (%)']
@@ -152,7 +218,7 @@ def get_y_pred(rg_nm,tgt_crs):
     X_test2= X_test[:,v_idx]
     nv2= len(basic_vars2)
     
-    infn= indir1a+'Coef.RidgeLR{}_basic_scaledX.{}_12deg.txt'.format(nv2, rg_nm)    
+    infn= indir1a+'Coef.RidgeLR{}_basic_ano.{}_12deg.txt'.format(nv2, rg_nm)    
     
     ridge_LR= np.zeros([ncr,nv2+1])
     with open(infn,'r') as f:
@@ -166,11 +232,18 @@ def get_y_pred(rg_nm,tgt_crs):
     ridge_LR_output= [] 
     for j in range(ncr):
         yy= y_test[:,j]
+        rfo_std= rfo_ref['std'][:,j:j+1]
+        rfo_mean= rfo_ref['mean'][:,j:j+1]
+    
         y_pred= (X_test2*ridge_LR[j,:-1][None,:]).sum(axis=1)+ridge_LR[j,-1]
-        ridge_LR_output.append(y_pred)
+        y_pred= cf.de_standardize(rfo_std,rfo_mean,y_pred.reshape([1,nyr2,nrg*npt])).squeeze() 
+        
+        mae= np.abs(y_pred-yy).mean()
+        r2= 1-((yy-y_pred)**2).sum()/((yy-yy.mean())**2).sum()
+        ridge_LR_output.append(np.array([mae,r2]))
     ridge_LR_output= np.asarray(ridge_LR_output)
-    #print(ridge_LR_output.shape); sys.exit() # [ncr,nyr*npt]
-    output['ridge_LR0']= [tgt_crs,ridge_LR_output]
+    #print(ridge_LR_output.shape); sys.exit() # [ncr,2]
+    output['ridge_LR6']= [tgt_crs,ridge_LR_output]
 
     
     ##-- Neural Net_RawV
@@ -191,17 +264,19 @@ def get_y_pred(rg_nm,tgt_crs):
     clim_vidx= [raw_vns.index(name) for name in clim_vars]  # index for skt and sp
     nv2= len(clim_vars)
     
-    indata= cf.collect_data2calc_LCidx_fromSamples(
-        mdnm1,rg_nm,var_names=raw_vns,indir=indir,in_dim=[nyr,npt])
-    indata= np.concatenate([np.expand_dims(arr,axis=-1) for arr in indata],axis=-1)
-    print(indata.shape, ) #; sys.exit() # [nyr,npt,nvar]
-
-    ## Clim data
-    clim_indata= indata[:,:,clim_vidx].mean(axis=0) #[npt,nv2]
-    clim_indata= np.tile(clim_indata,[nyr,1,1]).reshape([nyr*npt,nv2])
-    
+    all_indata=[]
+    for rg_nm in rg_names:
+        indata= cf.collect_data2calc_LCidx_fromSamples(
+            mdnm1,rg_nm,var_names=raw_vns,indir=indir,in_dim=[nyr,npt])
+        indata= np.concatenate([np.expand_dims(arr,axis=-1) for arr in indata],axis=-1)
+        all_indata.append(indata)
+    all_indata= np.asarray(all_indata) #[nrg,nyr,npt,nv]
+    clim_indata= all_indata[:,:,:,clim_vidx].mean(axis=1) #[nrg,npt,nv2]
+    all_indata= all_indata.swapaxes(0,1).reshape([nyr*nrg*npt,nv])
+    clim_indata= np.tile(clim_indata,[nyr,1,1,1]).reshape([nyr*nrg*npt,nv2])
+        
     ## Normalize
-    indata= cf.normalize_x_raw(indata.reshape([nyr*npt,nv]),raw_vns)
+    indata= cf.normalize_x_raw(all_indata,raw_vns) #; print(indata.shape) #[nyr*nrg*npt,nv]
     for k in range(nv):
         a= indata[:,k]
         print(raw_vns[k],a.min(), np.percentile(a,[5,50,95]),a.max())
@@ -215,9 +290,9 @@ def get_y_pred(rg_nm,tgt_crs):
     raw_var_names+= clim_vnames
     
     ## Train-Test split
-    indata= indata.reshape([nyr,npt,nv])
+    indata= indata.reshape([nyr,nrg*npt,nv])
     X_train, X_test= indata[train_yr_idx,:].reshape([-1,nv]),indata[test_yr_idx,:].reshape([-1,nv])
-    y_train, y_test= rfos[train_yr_idx,:].reshape([-1,ncr]),rfos[test_yr_idx,:].reshape([-1,ncr])
+    y_train, y_test= rfos[train_yr_idx,:].reshape([-1,ncr]),rfos[test_yr_idx,:] #.reshape([-1,ncr])
     print(X_train.shape, y_train.shape)
     print(X_test.shape, y_test.shape)
 
@@ -229,13 +304,31 @@ def get_y_pred(rg_nm,tgt_crs):
     loaded_model.get_model_summary()
     predictions= loaded_model.predict(X_test)
     
-    NN_output= predictions.T 
-    #print(NN_output.shape); sys.exit() # [ncr,nyr*npt]
+    NN_output=[]
+    for j in range(ncr):
+        yy= y_test[:,:,j].reshape(-1)
+        y_pred= predictions[:,j]
+
+        mae= np.abs(y_pred-yy).mean()
+        r2= 1-((yy-y_pred)**2).sum()/((yy-yy.mean())**2).sum()
+        NN_output.append(np.array([mae,r2]))
+    NN_output= np.asarray(NN_output)
+    #print(NN_output.shape); sys.exit() # [ncr,2]        
     output['NN_rawVar1']= [tgt_crs,NN_output]
     
-    
+    ## Build reference model with slope=0
+    ref_intercept= y_train.mean(axis=0)    # [nrg*npt,ncr]
+    y_pred= np.ones_like(y_test)*ref_intercept[None,:]
+    ref_output= []
+    for j in range(ncr):
+        res1= y_pred[:,:,j]
+        y_true1= y_test[:,:,j]
+        mae= np.abs(res1-y_true1).mean() 
+        r2_score= 1-((y_true1-res1)**2).sum()/((y_true1-y_true1.mean())**2).sum()
+        ref_output.append(np.array([mae,r2]))
+    ref_output= np.asarray(ref_output)
+    output['ref']= [tgt_crs,ref_output]
     return output
-
 
 import matplotlib as mpl
 import matplotlib.colors as cls
@@ -254,10 +347,10 @@ def plot_main(pdata):
     plt.suptitle(pdata['suptit'],fontsize=16,y=0.98,va='bottom',stretch='semi-condensed') #,x=0.1,ha='left')
     
     ncol,nrow=2,2
-    lf,rf,bf,tf=0.04,0.96,0.16,0.92
+    lf,rf,bf,tf=0.04,0.96,0.12,0.92
     gapx, npnx=0.085,ncol
     lx=(rf-lf-gapx*(npnx-1))/float(npnx)
-    gapy, npny=0.095,nrow
+    gapy, npny=0.13,nrow
     ly=(tf-bf-gapy*(npny-1))/float(npny)
 
     ix=lf; iy=tf
@@ -268,49 +361,46 @@ def plot_main(pdata):
     sct_props_l= dict(s=40,alpha=0.8)
 
     axes,yr,xr=[],[],[]
-    tcr_nms,y_true= output1['ref']
     for ii,tcr in enumerate(tgt_crs):
         ax1=fig.add_axes([ix,iy-ly,lx,ly])
-        y_true1= y_true[ii]
-
-        ## NNet_rawVar
-        tcr_nms,result1= output1['NN_rawVar1']
-        res1= result1[ii]
-        mae= np.abs(res1-y_true1).mean()
-        r2_score= 1-((y_true1-res1)**2).sum()/((y_true1-y_true1.mean())**2).sum()
-        sct4= ax1.scatter(mae*100,np.clip(r2_score,-0.5,1.0),c='k',marker='*',label='NNet (All_rg)',**sct_props_n)
         
-        
-        ## Ridge LR
-        output1c= output1['ridge_LR2']  #['ridge_LR']= (tgt_crs,ridge_LR_output)
-        tcr_nms,result1= output1c
-        res1= result1[ii]
-        mae= np.abs(res1-y_true1).mean()
-        r2_score= 1-((y_true1-res1)**2).sum()/((y_true1-y_true1.mean())**2).sum()
-        sct2= ax1.scatter(mae*100,np.clip(r2_score,-0.5,1.0),c='r',marker='d',label='LR10 (All_rg)',**sct_props_a)
-
-        tcr_nms,result1= output1['ridge_LR'] 
-        res1= result1[ii]
-        mae= np.abs(res1-y_true1).mean()
-        r2_score= 1-((y_true1-res1)**2).sum()/((y_true1-y_true1.mean())**2).sum()
-        sct2= ax1.scatter(mae*100,np.clip(r2_score,-0.5,1.0),c='b',marker='d',label='LR10',**sct_props_a)
-
-        tcr_nms,result1= output1['ridge_LR0'] 
-        res1= result1[ii]
-        mae= np.abs(res1-y_true1).mean()
-        r2_score= 1-((y_true1-res1)**2).sum()/((y_true1-y_true1.mean())**2).sum()
-        sct2= ax1.scatter(mae*100,np.clip(r2_score,-0.5,1.0),c='g',marker='^',label='LR6',**sct_props_a)
-
+        ## Ref line based on slope=0
+        tcr_nms,result0= output1['ref']
+        mae0, r2_score0= result0[ii]
+        ax1.axhline(y=r2_score0,c='k',ls='--',lw=0.8)
+        ax1.axvline(x=mae0*100,c='k',ls='--',lw=0.8)
         
         ## Simple LR
         #output1a= output1['simple_LR'] #simple_LR= (tgt_crs,basic_vars,simple_LR_output)
         tcr_nms,v_nms,result1= output1['simple_LR']        
-        for jj,vn in enumerate(v_nms):
-            res1= result1[ii][jj]
-            mae= np.abs(res1-y_true1).mean()
-            r2_score= 1-((y_true1-res1)**2).sum()/((y_true1-y_true1.mean())**2).sum()
-            sct1= ax1.scatter(mae*100,np.clip(r2_score,-0.5,1.0),c=cc[jj],marker='o',label=vn.split()[0],**sct_props_l)
-            
+        insig_ind= output1['simple_LR_insig'][ii,:]
+        totv= len(v_nms)
+        for ij,vn in enumerate(v_nms[::-1]):
+            jj= totv-ij-1
+            mae,r2_score= result1[ii,jj,:]
+            sct1= ax1.scatter(mae*100,np.clip(r2_score,-0.5,1.0),c=cc[jj],marker='s',label=vn.split()[0],**sct_props_l)
+
+            if insig_ind[jj]:
+                sct1b= ax1.scatter(mae*100,np.clip(r2_score,-0.5,1.0),c='k',marker='x',**sct_props_l)        
+                
+        ## Ridge LR
+        tcr_nms,result1= output1['ridge_LR6']  #['ridge_LR']= (tgt_crs,ridge_LR_output)
+        mae,r2_score= result1[ii]
+        sct2= ax1.scatter(mae*100,np.clip(r2_score,-0.5,1.0),c='g',marker='h',label='LR6',**sct_props_a)
+
+        tcr_nms,result1= output1['ridge_LR10_local'] 
+        mae,r2_score= result1[ii]
+        sct2= ax1.scatter(mae*100,np.clip(r2_score,-0.5,1.0),c='b',marker='^',label='LR10 (Local)',**sct_props_a)
+
+        tcr_nms,result1= output1['ridge_LR10'] 
+        mae,r2_score= result1[ii]
+        sct2= ax1.scatter(mae*100,np.clip(r2_score,-0.5,1.0),c='r',marker='v',label='LR10',**sct_props_a)
+
+        ## NNet_rawVar
+        tcr_nms,result1= output1['NN_rawVar1']
+        mae,r2_score= result1[ii]
+        sct4= ax1.scatter(mae*100,np.clip(r2_score,-0.5,1.0),c='k',marker='*',label='NNet',**sct_props_n)
+        
         
         ##--
         subtit= '({}) {}'.format(abc[ii],tcr)
@@ -327,22 +417,37 @@ def plot_main(pdata):
         if ii//ncol==nrow-1:
             ax1.set_xlabel('Mean Abs. Error (%)')
 
-        axes.append(ax1)
-        yr.append(ax1.get_ylim())
-        xr.append(ax1.get_xlim())
-        
+        #axes.append(ax1)
+        #yr.append(ax1.get_ylim())
+        #xr.append(ax1.get_xlim())
+        yr= ax1.get_ylim()
+        yr= [min(yr[0],-0.04),max(yr[1],1.01)]
+        ax1.set_ylim(yr)
+        xr= ax1.get_xlim()
+        xr= [xr[1]*0.3,xr[1]*1.02]
+        ax1.set_xlim(xr)
+
+        ## Secondary x-axis
+        ax2= ax1.secondary_xaxis(location=-0.015-0.12*(ii//ncol+1),functions=(lambda x: x, lambda x: x))
+        mae_pct= [40,60,80,100]
+        ax2.set_xticks([mae0*v for v in mae_pct])
+        ax2.set_xticklabels([f'{v}%' for v in mae_pct])
+        ax2.tick_params(labelsize=9)
+        if ii//ncol==nrow-1:
+            ax2.set_xlabel('Relative to MAE_ref (%)',labelpad=2)
+                
         ix+= lx+gapx
         if ix+gapx>rf:
             ix=lf
             iy-= ly+gapy
-
+    '''
     yr,xr= np.asarray(yr), np.asarray(xr)
     yr1= [min(yr[:,0].min(),-0.01), max(yr[:,1].max(),1.01)]
     xr1= [min(xr[:,0].min(),2.75), xr[:,1].max()]
     for ax1 in axes:
         ax1.set_xlim(xr1)
         ax1.set_ylim(yr1)
-        
+    ''' 
                                  
     ###---
     plt.savefig(pdata['outfn'],bbox_inches='tight',dpi=150) #
@@ -357,25 +462,14 @@ if __name__=="__main__":
     rg_names= ['DJF_Peruvian','DJF_Namibian','DJF_Australian',
                'JJA_Peruvian','JJA_Namibian','JJA_Californian']
 
-    ## Collect y_pred by region and concatenate them
-    result_by_region=[]
-    for i,rg_nm in enumerate(rg_names):
-        output1= get_y_pred(rg_nm,tgt_crs) 
-
-        if i==0:
-            keys= output1.keys()
-            res= output1.copy()
-        else:
-            for k in keys:
-                res[k][-1]= np.concatenate((res[k][-1],output1[k][-1]),axis=-1)     
-    
+    output1= get_score(rg_names,tgt_crs)        
 
     ## Plot the results
     outdir= './Pics/'
     if True:
         outfn= outdir+'Fig04.Regr_performance_All_RG6_togehter.png'
-        suptit= "Regression Performance\n(All regions' predictions are aggregated)"
-        pic_data= dict(results= res,
+        suptit= "Prediction Performance"
+        pic_data= dict(results= output1,
                        tgt_crs= tgt_crs,
                        outfn=outfn,suptit=suptit,
         )

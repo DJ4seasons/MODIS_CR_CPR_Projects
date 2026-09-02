@@ -29,6 +29,10 @@ This code is for cross-validation, the version of AllRG
 
 By Daeho Jin
 2026.04.14 
+---
+
+Updated to anomaly-based model, including LR6-variants
+2026.07.31
 """
 
 import numpy as np
@@ -48,18 +52,33 @@ def main(model,rg_names,tgt_crs):
     nyr,npt= 22,810 
     indir= './Input4ML_LcRFO/'    
 
-    input4LCAIs= ['t700','t2m','sp','q700','q2m','t800']
-    input4add_CCFs= ['skt','skTadv','wspd10m','w700','r700']
-    if model[-1]=='6':
+    input4LCAIs= ['t700','t2m','sp','q700','q2m','t800','skt',]
+    input4add_CCFs= ['skTadv','wspd10m','w700','r700']
+    all_vars= ['LTS (K)','EIS (K)','ECTEI (K)','ELF (%)', 'M (K)', 'SST (K)','T_adv (K/day)','WS10m (m/s)','w700 (Pa/s)','RH700 (%)']
+    if 'v' in model: #model[-3:]=='6v2':
+        candidates= ['LTS (K)','EIS (K)','ECTEI (K)','ELF (%)', 'M (K)', 'SST (K)','RH700 (%)']
+        vid2exclude= ['','',6,0,1,2,5]
+        ver= int(model.strip().split('v')[1])
+        if ver>=2 and ver<len(vid2exclude):
+            basic_vars= []
+            for i,vnm in enumerate(candidates):
+                if i != vid2exclude[ver]:
+                    basic_vars.append(vnm)
+            print(model, basic_vars)
+        else:
+            print('Set proper model name, v2 to v6')
+            sys.exit()
+    elif model=='LR6':
         basic_vars= ['EIS (K)', 'SST (K)','T_adv (K/day)','WS10m (m/s)','w700 (Pa/s)','RH700 (%)']
-    elif model[-1]=='0':
-        basic_vars= ['LTS (K)','EIS (K)','ECTEI (K)','ELF (%)', 'M (K)', 'SST (K)','T_adv (K/day)','WS10m (m/s)','w700 (Pa/s)','RH700 (%)']
+    elif model=='LR10':
+        basic_vars= all_vars    
     else:
         sys.exit(f'model name is incompatible: {model}')
         
     nv= len(basic_vars)
     nv4lcai= len(input4LCAIs)
-        
+    basic_var_ind= [all_vars.index(vn) for vn in basic_vars]
+    
     test_yr_idx= [yr-2003 for yr in [2018,2019]]
     train_yr_idx= [val for val in range(nyr) if val not in test_yr_idx]
 
@@ -91,25 +110,26 @@ def main(model,rg_names,tgt_crs):
     for rg_nm in rg_names:
         indata= cf.collect_data2calc_LCidx_fromSamples(
             mdnm1,rg_nm,indir=indir,var_names=input4LCAIs+input4add_CCFs,in_dim=[nyr,npt])
-        lcai1, ext1= cf.calc_LCidx(indata[:nv4lcai]), np.asarray(indata[nv4lcai:])
+        lcai1, ext1= cf.calc_LCidx(indata[:nv4lcai]), np.asarray(indata[nv4lcai-1:])
         #print(indata[0].shape, lcai1.shape, ext1.shape) #; sys.exit() # [nyr,npt,nvar]
         
         lcai1= lcai1.reshape([nyr*npt,-1])
         ext1= ext1.reshape([-1,nyr*npt]).T
-
-        if model[-1]=='6':
-            lcai1= np.concatenate((lcai1[:,1:2],ext1),axis=1)
-        elif model[-1]=='0':
-            lcai1[:,3]*=100  ## Now ECF in %    
-            lcai1= np.concatenate((lcai1,ext1),axis=1)
-        print(lcai1.shape)
+        lcai1[:,3]*=100  ## Now ECF in %    
+        
+        lci_var_ind, ext_var_ind= [],[]
+        for iv in basic_var_ind:
+            if iv<5:
+                lci_var_ind.append(iv)
+            else:
+                ext_var_ind.append(iv-5)
+        
+        lcai1= lcai1[:,lci_var_ind]
+        ext1= ext1[:,ext_var_ind]
+        lcai1= np.concatenate((lcai1,ext1),axis=1)
+        #print(lcai1.shape)
         all_lcai.append(lcai1.reshape([nyr,npt,nv]))
-
-    all_lcai= np.asarray(all_lcai).swapaxes(0,1).reshape([nyr*nrg*npt,nv])
-    
-    ## Normalize LCAIs
-    lcai1= cf.normalize_x_lcai(all_lcai,basic_vars)
-
+    lcai1= np.asarray(all_lcai).swapaxes(0,1).reshape([nyr*nrg*npt,nv])
     ## Check LCAI data after normalization
     for k in range(nv):
         a= lcai1[:,k]
@@ -118,6 +138,11 @@ def main(model,rg_names,tgt_crs):
     ## Train-Test split
     rfos= rfos.reshape([nyr,nrg*npt,ncr])
     lcai1= lcai1.reshape([nyr,nrg*npt,nv])
+    
+    ## Standardization
+    rfos= cf.get_anomaly(rfos,train_yr_idx=train_yr_idx,flatten=False,standardization=True)
+    lcai1= cf.get_anomaly(lcai1,train_yr_idx=train_yr_idx,flatten=False,standardization=True)
+    
     X_train, X_test= lcai1[train_yr_idx,:].reshape([-1,nv]),lcai1[test_yr_idx,:].reshape([-1,nv])
     y_train, y_test= rfos[train_yr_idx,:].reshape([-1,ncr]),rfos[test_yr_idx,:].reshape([-1,ncr])
     print(X_train.shape, y_train.shape)
@@ -127,7 +152,7 @@ def main(model,rg_names,tgt_crs):
     from sklearn.linear_model import Ridge 
     from sklearn.model_selection import cross_val_score, GroupKFold
     
-    alphas = np.logspace(-4, 1, 26)  # Range from 0.0001 to 10
+    alphas = np.logspace(-1, 4, 26)  # Range from 0.1 to 10000
 
     kf= GroupKFold(n_splits=n_folds)
     cv_scores=[]
@@ -214,17 +239,19 @@ def plot(model,cv_data,rg_names,tgt_crs,out_fn):
     ls= ['-','-.',':']
     for k,data0 in enumerate(cv_data):
         ax1=fig.add_axes([ix,iy-ly,lx,ly])
-        
+        err_sum=[]
         for j,data1 in enumerate(data0):
             pic1= ax1.semilogx(data1[:,0],data1[:,1],
                            lw=1.5,ls=ls[j%len(ls)],c=cc[j%len(cc)],
                            label=rg_names[j])
             y_min_idx= np.argmin(data1[:,1])
             sct1= ax1.scatter([data1[y_min_idx,0],],[data1[y_min_idx,1],],s=20,c=cc[j%len(cc)],marker='v')
-            #y_max_idx= np.argmax(data1[:,1])
-            #sct2= ax1.scatter([data1[y_max_idx,0],],[data1[y_max_idx,1],],s=12,c=cc[j%len(cc)],marker='^')
-            
-        subtit= '({}) {} RFO'.format(abc[ai],tgt_crs[k]); ai+=1
+            err_sum.append(data1[:,1])
+        err_sum= np.asarray(err_sum).mean(axis=0)
+        y_min_idx= np.argmin(err_sum)
+        print(model,tgt_crs[k],'Best_alpha=',data1[y_min_idx,0])            
+        
+        subtit= '({}) {} RFO (Best alpha={:.2e})'.format(abc[ai],tgt_crs[k],data1[y_min_idx,0]); ai+=1
         ax1.set_title(subtit,fontsize=13,x=0,ha='left')
         ax1.set_xlabel('Alpha (regularization strength)',fontsize=11)
         ax1.set_ylabel('RMSE',fontsize=11)
@@ -250,7 +277,8 @@ def plot(model,cv_data,rg_names,tgt_crs,out_fn):
             
 if __name__=="__main__":
 
-    model= 'LR10' 
+    model= 'LR6v6' #'LR10' #'LR6' #
+
     tgt_crs= ['L1_tk','L2_tk','L_tn','S-Clr']
     rg_names= ['DJF_Peruvian','DJF_Namibian','DJF_Australian',
                'JJA_Peruvian','JJA_Namibian','JJA_Californian']

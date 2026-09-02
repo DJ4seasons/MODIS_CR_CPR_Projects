@@ -222,6 +222,38 @@ def normalize_x_lcai(arr,v_names):
             sys.exit(f'No matching variable: {vn}')      
     return arr2
 
+def de_standardize(ref_std,ref_mm,target,flatten=True):
+        '''
+        ref.shape= [npt,ncr]
+        target.shape= [ncr,nyr2,npt]
+        '''
+        #print('de',ref.shape, target.shape)
+        target= target*ref_std.T[:,None,:]+ref_mm.T[:,None,:]
+        #ncr,nyr,npt= target.shape
+        return target #.reshape([ncr,-1])
+    
+def get_anomaly(arr,train_yr_idx=[],flatten=False,standardization=False):
+    if len(train_yr_idx)>0:
+        mm= arr[train_yr_idx,:].mean(axis=0)
+        if standardization:
+            std= arr[train_yr_idx,:].std(axis=0,ddof=1)
+    else:
+        mm= arr.mean(axis=0)
+        if standardization:
+            std= arr.std(axis=0,ddof=1)
+    ano= arr-mm[None,:]
+    if standardization:
+        std_non_zero= std>0.
+        ano[:,std_non_zero]/=std[std_non_zero]
+
+    if flatten:
+        if ano.ndim==2:
+            ano= ano.reshape(-1)
+        elif ano.ndim==3:
+            nyr,npt,nv= ano.shape
+            ano= ano.reshape([nyr*npt,nv])
+    return ano
+
 def collect_data2calc_LCidx_fromSamples(mdnm,rg_name,var_names=[],in_dim=[22,490],
                 indir= './Input4ML_LcRFO/'):
     indata=[]
@@ -255,10 +287,87 @@ def collect_data2calc_LCidx_fromSamples(mdnm,rg_name,var_names=[],in_dim=[22,490
         sys.exit()
     return indata
 
-def calc_LCidx(indata,undef= -9999.9):
+def calc_LCidx_component(indata,undef= -9999.9):
     '''
     indata= ['T700','T2M','PS','QV700','QV2M','T800']
         or  ['t700','t2m','sp','q700','q2m','t800']
+    '''
+    params= dict(
+        gravity= 9.80665,
+        R_dry= 287.05,
+        R_vapor= 461.51,
+        Cp_dry= 1004.,
+        undef= undef
+    )
+    
+    if not np.isnan(undef):
+        for k,arr in enumerate(indata):
+            arr[arr<undef+1]= np.nan
+            indata[k]=arr
+
+    ### Calc LCC
+    noms_idx= indata[2]>900  ## Only for PS>900hPa
+
+    ### LTS
+    theta_sfc= get_potential_temp(indata[1][noms_idx],indata[2][noms_idx],params)
+    theta_800= get_potential_temp(indata[5][noms_idx],800.,params)
+    theta_700= get_potential_temp(indata[0][noms_idx],700.,params)
+
+    if_calc_ELF=True
+    EIS_supple, ELF_compo=calc_EIS_supplement(
+            indata[0][noms_idx],
+            indata[1][noms_idx],
+            indata[2][noms_idx],
+            None,
+            indata[3][noms_idx],
+            indata[4][noms_idx],
+            params, ELF_return=if_calc_ELF
+            )
+
+    ECTEI_supple= calc_ECTEI_supplement(
+            indata[0][noms_idx],
+            indata[1][noms_idx],
+            indata[3][noms_idx],
+            indata[4][noms_idx],
+            params
+            )
+    #ECTEI= EIS+ECTEI_supple
+
+    if if_calc_ELF:
+        LTS= theta_700-theta_sfc
+        ELF= calc_ELF(
+            indata[0][noms_idx],
+            indata[1][noms_idx],
+            indata[2][noms_idx],
+            indata[3][noms_idx],
+            indata[4][noms_idx],
+            LTS, ELF_compo,
+            params
+            )
+    ###---
+    nvar= 5+int(if_calc_ELF)
+    dim0= noms_idx.shape
+    dim1= list(dim0)+[nvar,]
+    out_arr= np.full(dim1,params['undef'])
+    out_arr[noms_idx,0]= theta_sfc
+    out_arr[noms_idx,1]= theta_800
+    out_arr[noms_idx,2]= theta_700
+    out_arr[noms_idx,3]= EIS_supple
+    out_arr[noms_idx,4]= ECTEI_supple
+    ai=5
+    if if_calc_ELF:
+        out_arr[noms_idx,ai]= ELF; ai+=1
+
+    #nan_idx= np.isnan(out_arr)
+    #if nan_idx.sum()>0:
+    #    out_arr[nan_idx]= params['undef']
+
+    return out_arr
+
+def calc_LCidx(indata,undef= -9999.9):
+    '''
+    indata= ['T700','T2M','PS','QV700','QV2M','T800','Tsfc']
+        or  ['t700','t2m','sp','q700','q2m','t800','skt']
     '''
     params= dict(
         gravity= 9.80665,
@@ -290,7 +399,7 @@ def calc_LCidx(indata,undef= -9999.9):
     if if_calc_M:
         M= calc_LTS(
             indata[5][noms_idx],
-            indata[1][noms_idx],
+            indata[6][noms_idx],
             indata[2][noms_idx],
             indata[3][noms_idx],
             indata[4][noms_idx],
@@ -355,17 +464,20 @@ def get_moist_R(QV,params):
 def get_moist_Cp(QV,params):
     return (1+0.87*QV)*params['Cp_dry']
 
+def get_potential_temp(T,P,params):
+    '''
+    Calculate dry potential temperature
+    '''
+    theta= T*(1000/P)**(params['R_dry']/params['Cp_dry'])
+    return theta
+    
 def calc_LTS(T700,Tsfc,Psfc,QV700,QVsfc,params,tgt_lev=700):
     '''
     LTS= theta_700 - theta_sfc
     theta= T*(1000/P)**(R/Cp)
     '''
-    if tgt_lev==700:
-        q_up= QV700
-    elif tgt_lev==800:
-        q_up= (QVsfc+QV700*2)/3
-    theta_700= T700*(1000/tgt_lev)**(get_moist_R(q_up,params)/get_moist_Cp(q_up,params))
-    theta_sfc= Tsfc*(1000/Psfc)**(get_moist_R(QVsfc,params)/get_moist_Cp(QVsfc,params))
+    theta_700= get_potential_temp(T700,tgt_lev,params)
+    theta_sfc= get_potential_temp(Tsfc,Psfc,params)
     return theta_700-theta_sfc
 
 def get_latent_heat_vapor(T):
