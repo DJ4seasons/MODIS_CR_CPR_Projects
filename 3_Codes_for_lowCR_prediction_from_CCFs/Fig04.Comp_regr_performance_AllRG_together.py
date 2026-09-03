@@ -28,6 +28,7 @@ def get_score(rg_names,tgt_crs):
 
     test_yr_idx= [yr-2003 for yr in [2018,2019]]
     train_yr_idx= [val for val in range(nyr) if val not in test_yr_idx]
+    nyr1,nyr2= len(train_yr_idx),len(test_yr_idx)
 
     ## Read CR_rfo
     rfo_all=[]
@@ -51,7 +52,7 @@ def get_score(rg_names,tgt_crs):
     nv4lcai= len(input4LCAIs)        
     
     ## Prepare LC_idx
-    all_lci=[]
+    all_lcai=[]
     for rg_nm in rg_names:
         indata= cf.collect_data2calc_LCidx_fromSamples(
             mdnm1,rg_nm,indir=indir,var_names=input4LCAIs+input4add_CCFs,in_dim=[nyr,npt])
@@ -63,10 +64,10 @@ def get_score(rg_names,tgt_crs):
         lcai1[:,3]*=100  ## Now ECF in %    
         lcai1= np.concatenate((lcai1,ext1),axis=1)
         #print(lcai1.shape)
-        all_lci.append(lci1.reshape([nyr,npt,nv]))
-    lci1= np.asarray(all_lci).swapaxes(0,1).reshape([nyr*nrg*npt,nv])    
+        all_lcai.append(lcai1.reshape([nyr,npt,nv]))
+    lcai1= np.asarray(all_lcai).swapaxes(0,1).reshape([nyr*nrg*npt,nv])    
     for k in range(nv):
-        a= lci1[::7,k]
+        a= lcai1[::7,k]
         print(basic_vars[k],a.min(), np.percentile(a,[5,50,95]),a.max())
     
     ## Train-Test split
@@ -82,7 +83,7 @@ def get_score(rg_names,tgt_crs):
         print(basic_vars[k],a.min(), np.percentile(a,[5,50,95]),a.max())
     
     X_train, X_test= lcai1[train_yr_idx,:].reshape([-1,nv]),lcai1[test_yr_idx,:].reshape([-1,nv])
-    y_train, y_test= rfos[train_yr_idx,:].reshape([-1,ncr]),rfos[test_yr_idx,:] #.reshape([-1,ncr])
+    y_train, y_test= rfos[train_yr_idx,:],rfos[test_yr_idx,:] #.reshape([-1,ncr])
     print(X_train.shape, y_train.shape)
     print(X_test.shape, y_test.shape)
 
@@ -161,7 +162,7 @@ def get_score(rg_names,tgt_crs):
 
     ridge_LR_output= [] 
     for j in range(ncr):
-        yy= y_test[:,j]
+        yy= y_test[:,:,j]
         rfo_std= rfo_ref['std'][:,j:j+1]
         rfo_mean= rfo_ref['mean'][:,j:j+1]
     
@@ -231,7 +232,7 @@ def get_score(rg_names,tgt_crs):
 
     ridge_LR_output= [] 
     for j in range(ncr):
-        yy= y_test[:,j]
+        yy= y_test[:,:,j]
         rfo_std= rfo_ref['std'][:,j:j+1]
         rfo_mean= rfo_ref['mean'][:,j:j+1]
     
@@ -292,7 +293,7 @@ def get_score(rg_names,tgt_crs):
     ## Train-Test split
     indata= indata.reshape([nyr,nrg*npt,nv])
     X_train, X_test= indata[train_yr_idx,:].reshape([-1,nv]),indata[test_yr_idx,:].reshape([-1,nv])
-    y_train, y_test= rfos[train_yr_idx,:].reshape([-1,ncr]),rfos[test_yr_idx,:] #.reshape([-1,ncr])
+    #y_train, y_test= rfos[train_yr_idx,:].reshape([-1,ncr]),rfos[test_yr_idx,:] #.reshape([-1,ncr])
     print(X_train.shape, y_train.shape)
     print(X_test.shape, y_test.shape)
 
@@ -325,7 +326,8 @@ def get_score(rg_names,tgt_crs):
         y_true1= y_test[:,:,j]
         mae= np.abs(res1-y_true1).mean() 
         r2_score= 1-((y_true1-res1)**2).sum()/((y_true1-y_true1.mean())**2).sum()
-        ref_output.append(np.array([mae,r2]))
+        ref_output.append(np.array([mae,r2_score]))
+        print(j,mae,r2_score)
     ref_output= np.asarray(ref_output)
     output['ref']= [tgt_crs,ref_output]
     return output
