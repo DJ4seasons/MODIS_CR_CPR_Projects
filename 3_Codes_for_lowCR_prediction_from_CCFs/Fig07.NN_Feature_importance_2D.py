@@ -202,4 +202,3 @@ if __name__=="__main__":
     )
     plot_avg_main(pic_data)
     
-

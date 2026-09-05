@@ -6,6 +6,14 @@ Collect y_pred from all regions, and calculate a score
 
 By Daeho Jin
 2026.04.15
+---
+
+Add MAE/R^2 reference lines and scale relative to this MAE_ref
+2026.07.28
+---
+
+Based on All_RG models, add significance test for simple LR models
+2026.08.13
 """
 
 import numpy as np
