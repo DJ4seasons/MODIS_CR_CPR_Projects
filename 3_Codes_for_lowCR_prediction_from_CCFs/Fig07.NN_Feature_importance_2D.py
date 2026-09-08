@@ -5,6 +5,11 @@ SHAP vs. ALE
 
 By Daeho Jin
 2026.04.15 
+---
+
+Add an option for shadow variables
+Features are sorted by their importance value for consistent color assignment
+2026.07.29
 """
 
 import numpy as np
@@ -15,7 +20,7 @@ import math
 import common_functions as cf
 import joblib
 
-def get_score(model_name,tgt_crs):
+def get_score(model_name,tgt_crs,shadow_line=False):
     print(model_name)
     
     ## Parameters
@@ -47,26 +52,53 @@ def get_score(model_name,tgt_crs):
     data_shape= [shap_samples,nv,ncr2]
     shape_txt= 'x'.join([str(v) for v in data_shape])
     infn1= indir1+model_name+'.shap_dict_{}.joblib'.format(shape_txt)
-    shap_values= joblib.load(infn1)['shap_values']
+    shap_values= joblib.load(infn1)['shap_values'][:,:,:ncr]
     print(shap_values.shape)
-    
+        
     ## Read ALE_dict data
     data_shape= [nv,ale_bins,ncr2]
     ale_txt= 'x'.join([str(v) for v in data_shape])
     infn2= indir1+model_name+'.ale_result_dict_{}.joblib'.format(ale_txt)
     ale_results= joblib.load(infn2)
-    print(ale_results['ale_values'].shape)
-            
+    ale_values= ale_results['ale_values'][:,:,:ncr]
+    print(ale_values.shape)
+    
+    if shadow_line:
+        nv2=nv*2 # For Shadow variables
+        # SHAP_shadow
+        data_shape= [shap_samples,nv2,ncr2]
+        shape_txt= 'x'.join([str(v) for v in data_shape])
+        infn2= indir1+model_name+'.shap_dict_{}.wShadow.joblib'.format(shape_txt)
+        shap_shadow= joblib.load(infn2)['shap_values'][:,:,:ncr]
+        print(shap_shadow.shape)
+        shap_shadow= shap_shadow[:,nv:,:]
+        shap_crt= np.absolute(shap_shadow).mean(axis=0).max(axis=0)
+        
+        # ALE_shadow
+        data_shape= [nv2,ale_bins,ncr2]
+        ale_txt= 'x'.join([str(v) for v in data_shape])
+        infn2= indir1+model_name+'.ale_result_dict_{}.wShadow.joblib'.format(ale_txt)
+        ale_results2= joblib.load(infn2)
+        ale_shadow= ale_results2['ale_values'][nv:,:,:ncr]    
+        ale_crt= np.absolute(ale_shadow).mean(axis=1).max(axis=0)
+        
     output=[]
     for j in range(nv):
         mean_abs_shap= np.absolute(shap_values[:,j,:]).mean(axis=0)
-        mean_abs_ale= np.absolute(ale_results['ale_values'][j,:,:]).mean(axis=0)
+        mean_abs_ale= np.absolute(ale_values[j,:,:]).mean(axis=0)
         feature_name= ale_results['feature_names'][j]
         print(feature_name,mean_abs_shap,mean_abs_ale) #; sys.exit()
         out1= dict(feature_name=feature_name,
                    mean_abs_shap= mean_abs_shap,
                    mean_abs_ale= mean_abs_ale,
         )
+        if shadow_line:
+            shap_sig_ind= mean_abs_shap>shap_crt
+            ale_sig_ind= mean_abs_ale>ale_crt
+            sig_ind= np.logical_and(shap_sig_ind,ale_sig_ind)
+            out1['sig_ind']= sig_ind
+            out1['shap_crt']= shap_crt
+            out1['ale_crt']= ale_crt
         output.append(out1)
 
     return output
@@ -75,7 +107,7 @@ def get_score(model_name,tgt_crs):
 import matplotlib.colors as cls
 import matplotlib.pyplot as plt
 from matplotlib.ticker import AutoMinorLocator, FixedLocator,FuncFormatter, MultipleLocator
-def plot_avg_main(pdata):
+def plot_avg_main(pdata,shadow_line=False):
     results= pdata['results']
     tcr_names= pdata['tcr_names']
     
@@ -97,7 +129,8 @@ def plot_avg_main(pdata):
 
     ix=lf; iy=tf
 
-    cc= [f'C{v}' for v in range(10)][::-1]; n_cc= len(cc)
+    cmap= plt.cm.tab20
+    cc= [cmap(2*i) for i in range(10)]+[cmap(2*i+1) for i in range(10)]; n_cc=len(cc)
     mk= ['d','o','^','v','s','P']; n_mk= len(mk)
     sct_props= dict(s=50)
 
@@ -107,6 +140,7 @@ def plot_avg_main(pdata):
 
         tx1,ty1= [],[]
         labels=[]
+        sig_ind1= []
         for jj,out_dict in enumerate(output1):            
             xx= out_dict['mean_abs_ale'] 
             yy= out_dict['mean_abs_shap'] 
@@ -119,27 +153,41 @@ def plot_avg_main(pdata):
             tx1.append(xx)
             ty1.append(yy)
             labels.append(label)
-        xy_vals.append([tx1,ty1])
+
+            zz= out_dict['sig_ind'] if shadow_line else [True,]*len(xx)
+            sig_ind1.append(zz)
+        xy_vals.append([tx1,ty1,sig_ind1])
+        if shadow_line:
+            x_crt,y_crt= out_dict['ale_crt'], out_dict['shap_crt']
+
 
     xy_vals= np.asarray(xy_vals).squeeze()    # [x/y,nv,ncr]
     #print(xy_vals.shape) ; sys.exit() 
     _,nv,ncr= xy_vals.shape
 
+    ## Sort variables by feature importance
+    fimp_byVar= (xy_vals[0,:]+xy_vals[1,:]).max(axis=1)
+    fimp_ind= np.argsort(fimp_byVar)[::-1]
+    
     ncr0= min(ncr,len(tcr_names))
     tot_panels= ncr0
     axes,yr,xr=[],[],[]
     for k in range(ncr0):    
         ax1=fig.add_axes([ix,iy-ly,lx,ly])
-        xx,yy= xy_vals[0,:,k], xy_vals[1,:,k]
-        for j in range(nv):        
-            sct1= ax1.scatter(xx[j:j+1],yy[j:j+1],c=cc[j%n_cc],marker=mk[j%n_mk],label=labels[j],alpha=1-j*0.015,**sct_props)
-        
+        xx,yy,sig= xy_vals[0,:,k], xy_vals[1,:,k], xy_vals[2,:,k]
+        for j,fi in enumerate(fimp_ind):        
+            sct1= ax1.scatter(xx[fi:fi+1],yy[fi:fi+1],color=cc[j%n_cc],marker=mk[j%n_mk],label=labels[fi],alpha=1-j*0.015,**sct_props)
+            if not sig[fi]:
+                print('Insignificant',k,labels[j])
         ##--
         subtit= '({}) For {} RFO'.format(abc[k],tcr_names[k])
         ax1.set_title(subtit,fontsize=12,x=0,ha='left')
         ax1.grid(ls=':')
         ax1.tick_params(labelsize=9)
-        
+        if shadow_line:
+            ax1.axvline(x=x_crt[k],ls='--',lw=0.8,c='k')
+            ax1.axhline(y=y_crt[k],ls='--',lw=0.8,c='k')
+            
         if k==ncol-1:
             ax1.legend(loc='upper left',bbox_to_anchor=[1.04,1.],fontsize=10,borderaxespad=0)
         if k%ncol==0:
@@ -185,20 +233,21 @@ if __name__=="__main__":
     md_name= 'AllRG6_ow10_100-100_rs37' #'AllRG12_ow10_172-172_rs23' #
     
     mdnm_head= md_name.split('_')[0]
-    outfn= outdir+f'Fig06.Feature_importance_NNet_RawVar_{mdnm_head}.png'
+    outfn= outdir+f'Fig07.Feature_importance_NNet_RawVar_{mdnm_head}.png'
     if mdnm_head[-1]=='6':
         suptit= 'Feature Importance in NNet model' #.format(tcr_nm)
     else:
         suptit= f'Feature Importance in NNet_{mdnm_head} model' #.format(tcr_nm)
     
     
+    shadow_line= False #True #
     ## Read metrics
-    output1= get_score(md_name,tgt_crs)
+    output1= get_score(md_name,tgt_crs,shadow_line=shadow_line)
         
     ## Plot the results    
     pic_data= dict(results= [md_name,output1],
                    tcr_names= tgt_crs,
                    outfn=outfn,suptit=suptit,
     )
-    plot_avg_main(pic_data)
+    plot_avg_main(pic_data,shadow_line=shadow_line)
     

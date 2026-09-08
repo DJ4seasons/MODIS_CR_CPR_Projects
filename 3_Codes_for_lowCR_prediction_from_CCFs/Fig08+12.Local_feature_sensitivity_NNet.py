@@ -4,6 +4,10 @@ x-axis sets as standardized range of select features
 
 By Daeho Jin
 2026.04.15 
+---
+
+Features are sorted by their importance value for consistent color assignment
+2026.07.30
 """
 
 import numpy as np
@@ -39,16 +43,28 @@ def main(tgt_crs,md_nm,model_name):
     nv+= nv2
     var_names+= clim_vnames
 
-    ## Read feature importance data
+    ## Parameters for feature importance data
     indir1= './NN_feature_importance_data/'
     shap_samples= 250
     ale_bins= 50
 
-    ## Read SHAP data
+    ## SHAP and ALE file info
     shap_data_shape= [shap_samples,nv,ncr2]
     shap_shape_txt= 'x'.join([str(v) for v in shap_data_shape])
     ale_data_shape= [nv,ale_bins,ncr2]
     ale_shape_txt= 'x'.join([str(v) for v in ale_data_shape])    
+    
+    ## First read default model data for the order of variables
+    model_name0= 'AllRG6_ow10_100-100_rs37'
+    infn1= indir1+model_name0+'.shap_dict_{}.joblib'.format(shap_shape_txt)
+    shap_values= joblib.load(infn1)['shap_values'][:,:,:ncr]
+    
+    infn2= indir1+model_name0+'.ale_result_dict_{}.joblib'.format(ale_shape_txt)
+    ale_values= joblib.load(infn2)['ale_values'][:,:,:ncr]
+
+    mean_abs_shap= np.absolute(shap_values).mean(axis=0) #[nv,ncr]
+    mean_abs_ale= np.absolute(ale_values).mean(axis=1) #[nv,ncr]
+    mean_abs_sum_max= (mean_abs_shap+mean_abs_ale).max(axis=1)
     
     ## Prepare X_test, y_test, and model by region
     ale_by_region,shap_by_region= [],[]
@@ -98,10 +114,11 @@ def main(tgt_crs,md_nm,model_name):
     outdir= './Pics/'
     
     if True:
-        outfn= outdir+f'Fig07.Local_feature_sensitivity.{md_nm}_RawVar.png' #.format(tcr_nm)
+        outfn= outdir+f'Fig08+12.Local_feature_sensitivity.{md_nm}_RawVar.png' #.format(tcr_nm)
         suptit= f'Local Feature Sensitivity of {md_nm} model' #.format(tcr_nm)
         pic_data= dict(ale= ale_by_region[0], shap= shap_by_region[0],
                        var_names=var_names,
+                       mean_abs_sum_max=mean_abs_sum_max,
                        tgt_crs=tgt_crs,
                        outfn=outfn,suptit=suptit,
         )
@@ -124,6 +141,10 @@ def plot_main(pdata):
     
     abc= 'abcdefghijklmnopqrstuvwxyzabcdefg'
     max_var2display=6
+    
+    ## Sort variables by feature importance
+    fimp_byVar= pdata['mean_abs_sum_max']
+    fimp_ind= list(np.argsort(fimp_byVar)[::-1])
     
     ## Convert by target
     ncr= len(tgt_crs) 
@@ -155,9 +176,12 @@ def plot_main(pdata):
 
     ix=lf; iy=tf
 
-    cc= [f'C{v}' for v in range(10)]; n_cc= len(cc)
+    #cc= [f'C{v}' for v in range(10)]; n_cc= len(cc)
+    cmap= plt.cm.tab20
+    cc= [cmap(2*i) for i in range(10)]+[cmap(2*i+1) for i in range(10)]; n_cc=len(cc)
+    ls= ['-','--',':']
     
-    props= dict(lw=2,ls='-',alpha=0.8)
+    props= dict(lw=2,alpha=0.8)
     hv_props= dict(ls=':',lw=1,c='0.3',alpha=0.6,zorder=0)
     props_mav= dict(ha='right',va='bottom',color='k',fontsize=12)
     axes_l,yr_l=[],[]
@@ -178,17 +202,18 @@ def plot_main(pdata):
                 xp1,yy= xx[~nan_idx],yy[~nan_idx]
             else:
                 xp1=xx
-            pic1= ax1.plot(xp1,yy,c=cc[j%n_cc],label=var_names[iv].split()[0],**props)
+            cc_ind= fimp_ind.index(iv)
+            pic1= ax1.plot(xp1,yy,c=cc[cc_ind%n_cc],ls=ls[j//3],label=var_names[iv].split()[0],**props)
         
         ##--
         ax1.tick_params(labelsize=9)
-        ax1.set_xlabel('Features are standardized',fontsize=10)
+        ax1.set_xlabel('Feature space (standardized)',fontsize=10)
         ax1.set_ylabel('SHAP values',fontsize=10)
         ax1.axhline(y=0,**hv_props)
         ax1.axvline(x=0,**hv_props)
         ax1.xaxis.set_minor_locator(AutoMinorLocator(2))
         
-        subtit= '({}) For {}'.format(abc[ai],tgt_crs[i]); ai+=1
+        subtit= '({}) {}'.format(abc[ai],tgt_crs[i]); ai+=1
         ax1.set_title(subtit,fontsize=13,x=0,ha='left')
         axes_l.append(ax1); yr_l.append(ax1.get_ylim())
         
@@ -196,11 +221,12 @@ def plot_main(pdata):
         ax2= fig.add_axes([ix,iy-ly,lx,ly])
         for j,iv in enumerate(v_idx):
             xx,yy= ale1[iv,0,:], ale1[iv,1,:]
-            pic2= ax2.plot(xx,yy,c=cc[j%n_cc],label=var_names[iv].split()[0],**props)
+            cc_ind= fimp_ind.index(iv)
+            pic2= ax2.plot(xx,yy,c=cc[cc_ind%n_cc],ls=ls[j//3],label=var_names[iv].split()[0],**props)
                     
         ##--
         ax2.tick_params(labelsize=9)
-        ax2.set_xlabel('Features are standardized',fontsize=10)
+        ax2.set_xlabel('Feature space (standardized)',fontsize=10)
         ax2.set_ylabel('ALE values',fontsize=10)
         ax2.legend(loc='upper left',bbox_to_anchor=[1.04,1.],fontsize=10,borderaxespad=0)
         ax2.axhline(y=0,**hv_props)
